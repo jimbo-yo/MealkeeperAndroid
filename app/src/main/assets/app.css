@@ -1,10 +1,13 @@
 /* Prompt to Pan styles. The app always uses its phone layout; wider screens show it as a centred column.
    Colours use light-dark(), which follows the system theme (on Android, via Theme.Mealkeeper's night variant).
-   MainActivity sets --android-safe-top / --android-safe-bottom to the status- and navigation-bar heights. */
+   MainActivity sets --android-safe-top / --android-safe-bottom to the status- and navigation-bar heights, and
+   --android-ime-bottom to the keyboard's height while it's open. */
 
 :root {
   --font-body: Inter, Roboto, "Segoe UI", sans-serif;
   --safe-bottom: max(env(safe-area-inset-bottom), var(--android-safe-bottom, 0px));
+  /* Dialogs sit above the keyboard when it's open (the bottom nav stays put underneath). */
+  --dialog-bottom: max(var(--safe-bottom), var(--android-ime-bottom, 0px));
   color-scheme: light dark;
 }
 
@@ -160,12 +163,12 @@ button:active {
   display: none;
   align-items: flex-end;
   justify-content: center;
-  padding: 10px 10px calc(10px + var(--safe-bottom));
+  padding: 10px 10px calc(10px + var(--dialog-bottom));
 }
 
 .modal {
   width: 100%;
-  max-height: 88vh;
+  max-height: min(88vh, calc(100vh - var(--android-safe-top, 0px) - var(--dialog-bottom) - 30px));
   overflow: auto;
   background: light-dark(#fffefa, #1b201b);
   border-radius: 24px 24px 14px 14px;

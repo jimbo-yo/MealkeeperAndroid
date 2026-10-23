@@ -627,6 +627,9 @@ function openModal(html, centered = false) {
   document.getElementById('modal-bg').style.display = 'flex'
 }
 
+// When the keyboard opens, the dialog moves up and shrinks (see --dialog-bottom in app.css); keep the field in view.
+document.getElementById('modal').addEventListener('focusin', e => setTimeout(() => e.target.scrollIntoView({block: 'nearest'}), 350));
+
 function closeModal() {
   document.getElementById('modal-bg').style.display = 'none';
   recipeOpen = false;

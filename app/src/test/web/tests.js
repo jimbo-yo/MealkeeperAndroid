@@ -652,6 +652,19 @@ test('bottom nav clears the Android navigation bar', () => {
   eq(padded, '31px');
 });
 
+test('dialogs move above the keyboard; the bottom nav does not', () => {
+  let root = document.documentElement.style, bg = document.getElementById('modal-bg'), nav = document.querySelector('.mobile-nav');
+  openImport();
+  root.setProperty('--android-safe-bottom', '24px');
+  root.setProperty('--android-ime-bottom', '300px');
+  let dialog = getComputedStyle(bg).paddingBottom, navPad = getComputedStyle(nav).paddingBottom;
+  root.setProperty('--android-ime-bottom', '0px');
+  let closed = getComputedStyle(bg).paddingBottom;
+  root.removeProperty('--android-safe-bottom');
+  root.removeProperty('--android-ime-bottom');
+  eq([dialog, navPad, closed], ['310px', '31px', '34px']);
+});
+
 // ---- Report ----
 
 reset();

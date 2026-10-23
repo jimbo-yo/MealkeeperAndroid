@@ -35,6 +35,7 @@ class MainActivity : Activity() {
     private var isPageLoaded = false
     private var safeTopDp = 44
     private var safeBottomDp = 0
+    private var imeBottomDp = 0
     private val prefs: SharedPreferences by lazy { getSharedPreferences("mealkeeper", MODE_PRIVATE) }
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -87,18 +88,26 @@ class MainActivity : Activity() {
         webView.setOnApplyWindowInsetsListener { _, insets ->
             val top: Int
             val bottom: Int
+            val ime: Int
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 top = insets.getInsets(WindowInsets.Type.statusBars() or WindowInsets.Type.displayCutout()).top
                 bottom = insets.getInsets(WindowInsets.Type.navigationBars()).bottom
+                ime = insets.getInsets(WindowInsets.Type.ime()).bottom
             } else {
                 @Suppress("DEPRECATION")
                 top = insets.systemWindowInsetTop
+                // Before Android 11 the keyboard is part of the system window inset; the stable inset is the nav bar.
                 @Suppress("DEPRECATION")
-                bottom = insets.systemWindowInsetBottom
+                bottom = insets.stableInsetBottom
+                @Suppress("DEPRECATION")
+                ime = maxOf(0, insets.systemWindowInsetBottom - insets.stableInsetBottom)
             }
             val density = resources.displayMetrics.density
             safeTopDp = (top / density).toInt()
             safeBottomDp = (bottom / density).toInt()
+            // Drawing edge-to-edge means the window no longer shrinks for the keyboard, so the page lifts its
+            // dialogs above it using this height.
+            imeBottomDp = (ime / density).toInt()
             if (isPageLoaded) applySafeInsets()
             insets
         }
@@ -214,7 +223,8 @@ class MainActivity : Activity() {
     private fun applySafeInsets() {
         runJs(
             "document.documentElement.style.setProperty('--android-safe-top','${safeTopDp}px');" +
-                "document.documentElement.style.setProperty('--android-safe-bottom','${safeBottomDp}px')"
+                "document.documentElement.style.setProperty('--android-safe-bottom','${safeBottomDp}px');" +
+                "document.documentElement.style.setProperty('--android-ime-bottom','${imeBottomDp}px')"
         )
     }
 
