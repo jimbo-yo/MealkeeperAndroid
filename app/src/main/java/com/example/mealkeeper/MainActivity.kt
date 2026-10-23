@@ -19,6 +19,7 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private var pendingSharedText: String? = null
     private var isPageLoaded = false
+    private var safeTopDp = 44
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,6 +48,8 @@ class MainActivity : Activity() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     isPageLoaded = true
+                    // Insets usually arrive before the page loads, so re-apply them here.
+                    applySafeTop()
                     pendingSharedText?.let { text ->
                         dispatchSharedTextToWeb(text)
                         pendingSharedText = null
@@ -67,13 +70,8 @@ class MainActivity : Activity() {
             }
             val density = resources.displayMetrics.density
             val topDp = (rawTopInset / density).toInt()
-            val safeTop = if (topDp > 0) topDp else 44
-            webView.post {
-                webView.evaluateJavascript(
-                    "document.documentElement.style.setProperty('--android-safe-top', '${safeTop}px')",
-                    null
-                )
-            }
+            safeTopDp = if (topDp > 0) topDp else 44
+            if (isPageLoaded) applySafeTop()
             insets
         }
 
@@ -98,6 +96,15 @@ class MainActivity : Activity() {
                     pendingSharedText = sharedText
                 }
             }
+        }
+    }
+
+    private fun applySafeTop() {
+        webView.post {
+            webView.evaluateJavascript(
+                "document.documentElement.style.setProperty('--android-safe-top', '${safeTopDp}px')",
+                null
+            )
         }
     }
 
@@ -158,10 +165,13 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (::webView.isInitialized && webView.canGoBack()) {
-            webView.goBack()
-        } else {
+        if (!::webView.isInitialized || !isPageLoaded) {
             super.onBackPressed()
+            return
+        }
+        // The page is a single-document app, so let it close modals / pop its own page stack first.
+        webView.evaluateJavascript("(window.handleBack&&window.handleBack())===true") { handled ->
+            if (handled != "true") super@MainActivity.onBackPressed()
         }
     }
 
