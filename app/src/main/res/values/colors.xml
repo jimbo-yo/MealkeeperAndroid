@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="mealkeeper_background">#F7F6F0</color>
+    <!-- Linen and soft olive, matching the page background in app.css; see Settings > Appearance. -->
+    <color name="appearance_light">#F3EADB</color>
+    <color name="appearance_dark">#232A24</color>
+    <!-- Launch window background, before the app applies the saved appearance. -->
+    <color name="mealkeeper_background">#F3EADB</color>
     <color name="mealkeeper_green">#496548</color>
 </resources>

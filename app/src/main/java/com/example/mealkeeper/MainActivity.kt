@@ -11,6 +11,7 @@ import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -202,8 +203,11 @@ class MainActivity : Activity() {
     // the page pads itself using the insets from applySafeInsets().
     @Suppress("DEPRECATION")
     private fun setUpSystemBars() {
-        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-            Configuration.UI_MODE_NIGHT_YES
+        val night = isDarkAppearance()
+        // Linen or olive behind the page, so there's no white or black flash while it loads.
+        val background = getColor(if (night) R.color.appearance_dark else R.color.appearance_light)
+        window.setBackgroundDrawable(ColorDrawable(background))
+        webView.setBackgroundColor(background)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -218,6 +222,13 @@ class MainActivity : Activity() {
                 View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
                 (if (night) 0 else lightBars)
         }
+    }
+
+    // Settings > Appearance: the page picks Light (linen), Dark (olive) or the phone's mode; the bars and window follow.
+    private fun isDarkAppearance(): Boolean = when (prefs.getString(PREF_APPEARANCE, "light")) {
+        "dark" -> true
+        "match" -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        else -> false
     }
 
     private fun applySafeInsets() {
@@ -265,6 +276,13 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun copyText(text: String) {
             runOnUiThread { copyToClipboard(text) }
+        }
+
+        @JavascriptInterface
+        fun setAppearance(mode: String) {
+            if (mode !in setOf("light", "dark", "match")) return
+            prefs.edit().putString(PREF_APPEARANCE, mode).apply()
+            runOnUiThread { setUpSystemBars() }
         }
 
         @JavascriptInterface
@@ -390,6 +408,7 @@ class MainActivity : Activity() {
         private const val REQUEST_EXPORT_BACKUP = 41
         private const val REQUEST_RESTORE_BACKUP = 42
         private const val PREF_CLIPBOARD_WATCH = "clipboardWatch"
+        private const val PREF_APPEARANCE = "appearance"
         private const val PREF_LAST_CLIP = "lastClipTimestamp"
         private const val MAX_CLIP_CHARS = 500_000
         // The page refers to the AI apps by these keys; the packages are also listed under <queries> in the manifest.

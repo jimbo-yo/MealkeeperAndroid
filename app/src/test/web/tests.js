@@ -33,6 +33,7 @@ function reset() {
   pendingImport = null;
   pendingAsk = null;
   myAi = 'chatgpt';
+  appearance = 'light';
   clipOffer = true;
   bridge.aiAppResult = 'shared';
   render();
@@ -331,7 +332,7 @@ test('export sends the backup to Android', () => {
   assert(call, 'bridge not called');
   assert(/^prompt-to-pan-backup-\d{4}-\d{2}-\d{2}\.json$/.test(call[1]), 'file name ' + call[1]);
   let data = JSON.parse(call[2]);
-  eq([data.format, data.meals.length, data.settings], [BACKUP_FORMAT, 4, {awake: false, cookAwake: true, clipOffer: true}]);
+  eq([data.format, data.meals.length, data.settings], [BACKUP_FORMAT, 4, {awake: false, cookAwake: true, clipOffer: true, appearance: 'light'}]);
 });
 
 test('restore asks first, then replaces the data', () => {
@@ -568,7 +569,7 @@ test('the Plan with AI switch is the same setting', () => {
   eq(myAi, 'claude');
   assert(main().textContent.includes('Start a new chat in Claude'), 'one-off button follows the setting');
   go('settings');
-  eq(main().querySelector('.tab.active').textContent, 'Claude');
+  assert([...main().querySelectorAll('.tab.active')].some(t => t.textContent === 'Claude'), 'Settings shows Claude');
 });
 
 test('prompts go straight to the AI app when it\'s installed', () => {
@@ -696,6 +697,34 @@ test('dialogs move above the keyboard; the bottom nav does not', () => {
   root.removeProperty('--android-safe-bottom');
   root.removeProperty('--android-ime-bottom');
   eq([dialog, navPad, closed], ['310px', '31px', '34px']);
+});
+
+// ---- Appearance ----
+
+const bgOf = el => getComputedStyle(el).backgroundColor;
+
+test('the app is Linen by default, even when the phone is in dark mode', () => {
+  eq([document.documentElement.dataset.theme, getComputedStyle(document.documentElement).colorScheme], ['light', 'light']);
+  eq(bgOf(document.body), 'rgb(243, 234, 219)');
+});
+
+test('Appearance switches to soft olive, tells Android, and is saved', () => {
+  go('settings');
+  [...main().querySelectorAll('.tab')].find(t => t.textContent === 'Dark').click();
+  eq([appearance, document.documentElement.dataset.theme], ['dark', 'dark']);
+  eq(bgOf(document.body), 'rgb(35, 42, 36)');
+  eq(bridgeCalls('setAppearance').pop()[1], 'dark');
+  eq(JSON.parse(localStorage.getItem(STORE_KEY)).appearance, 'dark');
+  setAppearance('match');
+  eq(getComputedStyle(document.documentElement).colorScheme, 'light dark');
+  applyState({meals: [], appearance: 'purple'});
+  eq(appearance, 'match', 'ignores unknown values');
+});
+
+test('the name uses the bundled script font', () => {
+  let brand = getComputedStyle(document.querySelector('.brand'));
+  assert(brand.fontFamily.includes('Satisfy'), brand.fontFamily);
+  eq(document.querySelector('.brand').textContent.trim(), 'Prompt to Pan');
 });
 
 // ---- Report ----

@@ -17,7 +17,8 @@ trap cleanup EXIT
 
 command -v firefox >/dev/null || { echo "firefox is needed to run the web tests" >&2; exit 2; }
 
-cp "$ROOT"/app/src/main/assets/* "$ROOT"/app/src/test/web/*.js "$WORK"/
+cp -r "$ROOT"/app/src/main/assets/. "$WORK"/
+cp "$ROOT"/app/src/test/web/*.js "$WORK"/
 # The test page is the real index.html with the fake Android bridge before the app and the tests after it.
 sed -e 's#<script src="demo-data.js"></script>#<script src="fake-android.js"></script>&#' \
     -e 's#<script src="app.js"></script>#&<script src="tests.js"></script>#' \

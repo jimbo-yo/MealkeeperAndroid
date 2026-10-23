@@ -1,13 +1,39 @@
 /* Prompt to Pan styles. The app always uses its phone layout; wider screens show it as a centred column.
    Colours use light-dark(), which follows the system theme (on Android, via Theme.Mealkeeper's night variant).
    MainActivity sets --android-safe-top / --android-safe-bottom to the status- and navigation-bar heights, and
-   --android-ime-bottom to the keyboard's height while it's open. */
+   --android-ime-bottom to the keyboard's height while it's open.
+   Settings > Appearance sets data-theme on <html>: Linen (light, the default), soft olive (dark), or match the phone. */
+
+/* The app name's script font, bundled so it works offline (Apache 2.0, see fonts/Satisfy-LICENSE.txt). */
+@font-face {
+  font-family: "Satisfy";
+  src: url("fonts/Satisfy-Regular.woff2") format("woff2");
+  font-display: block;
+}
 
 :root {
   --font-body: Inter, Roboto, "Segoe UI", sans-serif;
   --safe-bottom: max(env(safe-area-inset-bottom), var(--android-safe-bottom, 0px));
   /* Dialogs sit above the keyboard when it's open (the bottom nav stays put underneath). */
   --dialog-bottom: max(var(--safe-bottom), var(--android-ime-bottom, 0px));
+  /* Surfaces for Linen (light) and soft olive (dark); text colours are set per element. */
+  --bg: light-dark(#f3eadb, #232a24);
+  --bar: light-dark(#f3eadb, #28302a);
+  --surface: light-dark(#fbf7f0, #2e372f);
+  --surface-2: light-dark(#f1e8d8, #343e35);
+  --field: light-dark(#fffcf6, #262d27);
+  --line: light-dark(#e4d9c6, #3b463c);
+  --track: light-dark(#e7ddcb, #3b463c);
+  --button-2: light-dark(#eae1cf, #3a453b);
+  --name: light-dark(#496548, #eed9b0);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+:root[data-theme="match"] {
   color-scheme: light dark;
 }
 
@@ -18,7 +44,7 @@
 body {
   margin: 0;
   font-family: var(--font-body);
-  background: light-dark(#f7f6f0, #111411);
+  background: var(--bg);
   color: light-dark(#1d211c, #e5e8e1);
 }
 
@@ -47,7 +73,7 @@ button:active {
 
 .app {
   min-height: 100vh;
-  background-color: light-dark(#f7f6f0, #111411);
+  background-color: var(--bg);
   color: light-dark(#1d211c, #e5e8e1);
 }
 
@@ -57,10 +83,10 @@ button:active {
   align-items: center;
   justify-content: space-between;
   padding: calc(var(--android-safe-top, 44px) + 10px) 12px 10px;
-  border-bottom: 1px solid light-dark(#e1e3da, #30352f);
+  border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  background: light-dark(#f7f6f0, #171b17);
+  background: var(--bar);
   z-index: 5;
 }
 
@@ -68,9 +94,11 @@ button:active {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 750;
-  font-size: 18px;
-  letter-spacing: -.5px;
+  font-family: "Satisfy", cursive;
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--name);
 }
 
 .brand-icon {
@@ -110,8 +138,8 @@ button:active {
   z-index: 6;
   display: flex;
   justify-content: space-around;
-  background: light-dark(#fffefa, #1b201b);
-  border-top: 1px solid light-dark(#e1e3da, #30352f);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
   padding: 7px 2px calc(7px + var(--safe-bottom));
 }
 
@@ -170,7 +198,7 @@ button:active {
   width: 100%;
   max-height: min(88vh, calc(100vh - var(--android-safe-top, 0px) - var(--dialog-bottom) - 30px));
   overflow: auto;
-  background: light-dark(#fffefa, #1b201b);
+  background: var(--surface);
   border-radius: 24px 24px 14px 14px;
   padding: 19px;
   box-shadow: 0 20px 80px #0003;
@@ -259,7 +287,7 @@ button:active {
 
 .divider {
   height: 1px;
-  background: light-dark(#e5e7df, #30372f);
+  background: var(--line);
   margin: 16px 0;
 }
 
@@ -278,8 +306,8 @@ button:active {
 }
 
 .panel {
-  background: light-dark(#fffefa, #1b201b);
-  border: 1px solid light-dark(#e3e5dc, #30362f);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 18px;
   padding: 16px;
   margin-bottom: 18px;
@@ -316,7 +344,7 @@ button:active {
 }
 
 .secondary {
-  background: light-dark(#e7e9e0, #2a3029);
+  background: var(--button-2);
   color: light-dark(#293a28, #e1e8dc);
   border-radius: 99px;
   padding: 11px 17px;
@@ -356,7 +384,7 @@ button:active {
   width: 100%;
   min-width: 0;
   border: 1px solid light-dark(#cdd3c6, #424b40);
-  background: light-dark(#fffefa, #171b17);
+  background: var(--field);
   color: inherit;
   border-radius: 13px;
   padding: 13px 14px;
@@ -415,7 +443,7 @@ textarea.field {
 
 .tabs {
   display: flex;
-  border-bottom: 1px solid light-dark(#e1e4db, #343a32);
+  border-bottom: 1px solid var(--line);
   margin: 20px 0;
   overflow-x: auto;
   white-space: nowrap;
@@ -447,8 +475,8 @@ textarea.field {
 }
 
 .stat {
-  background: light-dark(#fffefa, #1b201b);
-  border: 1px solid light-dark(#e6e7df, #30362f);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 15px;
   padding: 11px 9px;
   min-width: 0;
@@ -478,8 +506,8 @@ textarea.field {
 .meal-card {
   overflow: hidden;
   border-radius: 22px;
-  border: 1px solid light-dark(#e2e4da, #30372f);
-  background: light-dark(#fffefa, #1b201b);
+  border: 1px solid var(--line);
+  background: var(--surface);
   cursor: pointer;
 }
 
@@ -574,7 +602,7 @@ textarea.field {
   gap: 10px;
   padding: 12px;
   border-radius: 16px;
-  background: light-dark(#f6f6f0, #222720);
+  background: var(--surface-2);
   cursor: pointer;
   min-width: 0;
 }
@@ -619,7 +647,7 @@ textarea.field {
   align-items: flex-start;
   gap: 9px;
   padding: 13px 0;
-  border-bottom: 1px solid light-dark(#ecece5, #30362f);
+  border-bottom: 1px solid var(--line);
   font-size: 13px;
 }
 
@@ -730,7 +758,7 @@ textarea.field {
   }
 
   .brand {
-    font-size: 16px;
+    font-size: 22px;
   }
 
   .mobile-nav button {
@@ -742,7 +770,7 @@ textarea.field {
 
 @media (min-width: 761px) {
   body {
-    background: light-dark(#e8e9e3, #0b0d0b);
+    background: light-dark(#e6dcc8, #1a1f1b);
   }
 
   .app {

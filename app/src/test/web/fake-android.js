@@ -26,6 +26,9 @@ window.MealkeeperAndroid = {
   copyText(text) {
     this.calls.push(['copyText', text]);
   },
+  setAppearance(mode) {
+    this.calls.push(['setAppearance', mode]);
+  },
   setClipboardWatch(enabled) {
     this.calls.push(['setClipboardWatch', enabled]);
   }

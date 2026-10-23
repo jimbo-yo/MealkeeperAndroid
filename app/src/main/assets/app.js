@@ -17,6 +17,8 @@ let navStack = [],
   lastAwake = null,
   importText = '',
   myAi = 'chatgpt',
+  appearance = 'light',
+  lastAppearance = null,
   clipOffer = true,
   lastClipOffer = null,
   pendingImport = null,
@@ -427,7 +429,8 @@ function saveState() {
       awake,
       cookAwake,
       clipOffer,
-      ai: myAi
+      ai: myAi,
+      appearance
     }))
   } catch (e) {}
 }
@@ -456,6 +459,7 @@ function applyState(s) {
   // Saves from before the "Your AI" setting stored the AI last used as aiTab.
   let ai = s.ai || s.aiTab;
   if (ai in AI_GUIDES) myAi = ai;
+  if (APPEARANCES[s.appearance]) appearance = s.appearance;
 }
 
 function exportBackup() {
@@ -467,7 +471,8 @@ function exportBackup() {
       settings: {
         awake,
         cookAwake,
-        clipOffer
+        clipOffer,
+        appearance
       }
     }, null, 2);
   if (window.MealkeeperAndroid && window.MealkeeperAndroid.saveBackupFile) {
@@ -522,7 +527,8 @@ function confirmRestore() {
     checked: pendingRestore.checked,
     awake: obj(pendingRestore.settings).awake,
     cookAwake: obj(pendingRestore.settings).cookAwake,
-    clipOffer: obj(pendingRestore.settings).clipOffer
+    clipOffer: obj(pendingRestore.settings).clipOffer,
+    appearance: obj(pendingRestore.settings).appearance
   });
   pendingRestore = null;
   closeModal();
@@ -578,6 +584,7 @@ function render() {
   saveState();
   syncAwake();
   syncClipOffer();
+  syncAppearance();
 }
 
 window.handleBack = function() {
@@ -644,7 +651,7 @@ function home() {
   let m = currentMeal(),
     list = m ? m.shopping : [],
     left = list.filter(x => !x.checked).length;
-  return `<div class="eyebrow">YOUR RECIPE WORKSPACE</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">What are we cooking?</h1><p class="subhead">Your AI-created recipes, meal plans, and shopping lists — all together.</p></div><button class="primary" onclick="go('ai')">✧ Plan with AI</button></div><div class="stats"><div class="stat"><div class="number">${meals.length}</div><div class="label">Meal collections</div></div><div class="stat"><div class="number">${meals.reduce((a,x)=>a+x.recipes.length,0)}</div><div class="label">Recipes organized</div></div><div class="stat"><div class="number">${left}</div><div class="label">Items to shop for</div></div></div><div class="section-head"><h2>Recent meal collections</h2><button class="text-btn" onclick="go('meals')">View all →</button></div><div class="meal-grid">${meals.slice(0,4).map(mealCard).join('')}</div>${m?`<div class="section-head"><h2>Pick up where you left off</h2><button class="text-btn" onclick="go('timeline')">Open timeline →</button></div><div class="panel"><div class="row"><div class="recipe-icon">◷</div><div style="flex:1"><strong style="font-size:14px">${escapeHtml(m.name)}</strong><div class="muted small" style="margin-top:5px">${escapeHtml(m.timeline.length?`Start with: ${m.timeline[0].task} · ${fmtMinutes(timelineSpan(m.timeline))} total`:`${m.recipes.length} recipes · ${m.time}`)}</div></div><button class="secondary" onclick="openMeal(${m.id})">Open meal</button></div></div><div class="panel"><div class="spread"><div class="row"><div class="recipe-icon">☷</div><div><strong style="font-size:14px">Shopping list</strong><div class="muted small" style="margin-top:5px">${list.length?`${list.length-left} of ${list.length} items checked`:'No shopping list for this meal yet'}</div></div></div><button class="outline" onclick="go('shopping')">View list</button></div><div style="height:7px;background:light-dark(#e8eae2,#30372f);border-radius:9px;margin-top:16px;overflow:hidden"><div style="width:${list.length?(list.length-left)/list.length*100:0}%;height:100%;background:#66845b;border-radius:9px"></div></div></div>`:''}`
+  return `<div class="eyebrow">YOUR RECIPE WORKSPACE</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">What are we cooking?</h1><p class="subhead">Your AI-created recipes, meal plans, and shopping lists — all together.</p></div><button class="primary" onclick="go('ai')">✧ Plan with AI</button></div><div class="stats"><div class="stat"><div class="number">${meals.length}</div><div class="label">Meal collections</div></div><div class="stat"><div class="number">${meals.reduce((a,x)=>a+x.recipes.length,0)}</div><div class="label">Recipes organized</div></div><div class="stat"><div class="number">${left}</div><div class="label">Items to shop for</div></div></div><div class="section-head"><h2>Recent meal collections</h2><button class="text-btn" onclick="go('meals')">View all →</button></div><div class="meal-grid">${meals.slice(0,4).map(mealCard).join('')}</div>${m?`<div class="section-head"><h2>Pick up where you left off</h2><button class="text-btn" onclick="go('timeline')">Open timeline →</button></div><div class="panel"><div class="row"><div class="recipe-icon">◷</div><div style="flex:1"><strong style="font-size:14px">${escapeHtml(m.name)}</strong><div class="muted small" style="margin-top:5px">${escapeHtml(m.timeline.length?`Start with: ${m.timeline[0].task} · ${fmtMinutes(timelineSpan(m.timeline))} total`:`${m.recipes.length} recipes · ${m.time}`)}</div></div><button class="secondary" onclick="openMeal(${m.id})">Open meal</button></div></div><div class="panel"><div class="spread"><div class="row"><div class="recipe-icon">☷</div><div><strong style="font-size:14px">Shopping list</strong><div class="muted small" style="margin-top:5px">${list.length?`${list.length-left} of ${list.length} items checked`:'No shopping list for this meal yet'}</div></div></div><button class="outline" onclick="go('shopping')">View list</button></div><div style="height:7px;background:var(--track);border-radius:9px;margin-top:16px;overflow:hidden"><div style="width:${list.length?(list.length-left)/list.length*100:0}%;height:100%;background:#66845b;border-radius:9px"></div></div></div>`:''}`
 }
 
 function mealCard(m) {
@@ -698,7 +705,7 @@ function shoppingPage(embedded = false) {
   let list = m.shopping,
     done = list.filter(x => x.checked).length,
     groups = [...new Set(list.map(x => x.group))];
-  return `${head}<div class="panel"><div class="spread"><div><strong>${list.length-done} items left</strong><div class="muted small" style="margin-top:4px">${done} of ${list.length} checked</div></div><div class="actions"><button class="outline" onclick="clearChecks()">Uncheck all</button><button class="secondary" onclick="copyList()">Copy list</button></div></div><div style="height:6px;background:light-dark(#e7e9e0,#30372f);border-radius:9px;margin-top:15px;overflow:hidden"><div style="height:100%;width:${done/list.length*100}%;background:#66845b"></div></div></div>${groups.map(g=>`<div class="panel"><div class="spread"><h3 style="font-size:15px;margin:0">${escapeHtml(g)}</h3><span class="muted small">${list.filter(x=>x.group===g).length} items</span></div>${list.map((x,i)=>({...x,i})).filter(x=>x.group===g).map(x=>`<label class="checkrow ${x.checked?'checked':''}"><input type="checkbox" ${x.checked?'checked':''} onchange="toggleItem(${x.i},this.checked)"><span><span class="checktext">${escapeHtml(x.name)}</span>${x.usedIn.length?`<span class="muted small" style="display:block;margin-top:3px">for ${x.usedIn.map(recipeLink).join(', ')}</span>`:''}</span><span class="qty">${escapeHtml(x.qty)}</span></label>`).join('')}</div>`).join('')}`;
+  return `${head}<div class="panel"><div class="spread"><div><strong>${list.length-done} items left</strong><div class="muted small" style="margin-top:4px">${done} of ${list.length} checked</div></div><div class="actions"><button class="outline" onclick="clearChecks()">Uncheck all</button><button class="secondary" onclick="copyList()">Copy list</button></div></div><div style="height:6px;background:var(--track);border-radius:9px;margin-top:15px;overflow:hidden"><div style="height:100%;width:${done/list.length*100}%;background:#66845b"></div></div></div>${groups.map(g=>`<div class="panel"><div class="spread"><h3 style="font-size:15px;margin:0">${escapeHtml(g)}</h3><span class="muted small">${list.filter(x=>x.group===g).length} items</span></div>${list.map((x,i)=>({...x,i})).filter(x=>x.group===g).map(x=>`<label class="checkrow ${x.checked?'checked':''}"><input type="checkbox" ${x.checked?'checked':''} onchange="toggleItem(${x.i},this.checked)"><span><span class="checktext">${escapeHtml(x.name)}</span>${x.usedIn.length?`<span class="muted small" style="display:block;margin-top:3px">for ${x.usedIn.map(recipeLink).join(', ')}</span>`:''}</span><span class="qty">${escapeHtml(x.qty)}</span></label>`).join('')}</div>`).join('')}`;
 }
 
 // Timeline offsets count from when cooking starts, so the start time is worked back from the serving time.
@@ -731,7 +738,7 @@ ${step('↗', 'Or share it', 'Long-press the reply, tap <strong>Share</strong>, 
 }
 
 function settingsPage() {
-  return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Prompt to Pan is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a meal export from ChatGPT, Claude or another AI.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✦</div><div style="flex:1"><strong>Your AI</strong><div class="muted small" style="margin-top:4px">Revise with AI and Ask AI open a new chat here.</div></div></div>${aiChoice()}<div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up ChatGPT or Claude to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in ChatGPT or Claude and come back, Prompt to Pan offers to import it. Android shows a notice each time it checks a new copy.</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>`
+  return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="row"><div class="recipe-icon">◑</div><div style="flex:1"><strong>Appearance</strong><div class="muted small" style="margin-top:4px">Light is linen; dark is a soft olive.</div></div></div><div class="tabs" style="margin:10px 0 0">${Object.entries(APPEARANCES).map(([k, name]) => `<button class="tab ${k === appearance ? 'active' : ''}" onclick="setAppearance('${k}')">${name}</button>`).join('')}</div></div><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Prompt to Pan is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a meal export from ChatGPT, Claude or another AI.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✦</div><div style="flex:1"><strong>Your AI</strong><div class="muted small" style="margin-top:4px">Revise with AI and Ask AI open a new chat here.</div></div></div>${aiChoice()}<div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up ChatGPT or Claude to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in ChatGPT or Claude and come back, Prompt to Pan offers to import it. Android shows a notice each time it checks a new copy.</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>`
 }
 
 // The link back from the shopping list or timeline: to the recipe the user came from, or else to the meal.
@@ -1040,6 +1047,21 @@ function askAbout(kind, i) {
 ${question || 'I have a question about this.'}
 
 ${context}`, after);
+}
+
+const APPEARANCES = {light: 'Light', dark: 'Dark', match: 'Match phone'};
+
+function setAppearance(mode) {
+  appearance = mode;
+  render();
+}
+
+// The page picks its own colours (data-theme, see app.css); MainActivity matches the status bar and window to it.
+function syncAppearance() {
+  document.documentElement.dataset.theme = appearance;
+  if (appearance === lastAppearance) return;
+  lastAppearance = appearance;
+  if (window.MealkeeperAndroid && window.MealkeeperAndroid.setAppearance) window.MealkeeperAndroid.setAppearance(appearance)
 }
 
 function setMyAi(ai) {
