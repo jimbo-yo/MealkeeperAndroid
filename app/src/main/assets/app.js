@@ -672,13 +672,13 @@ function mealCard(m) {
 }
 
 function mealsPage() {
-  return `<div class="eyebrow">YOUR COLLECTIONS</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">Meal collections</h1><p class="subhead">Keep every course, recipe, shopping item, and cooking step together.</p></div><button class="primary" onclick="newMeal()">＋ New meal</button></div><div class="meal-grid">${meals.map(mealCard).join('')}</div>`
+  return `<div class="eyebrow">YOUR COLLECTIONS</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">Meal collections</h1><p class="subhead">Keep every course, recipe, shopping item, and cooking step together.</p></div><button class="primary" onclick="newMeal()">＋ New meal</button></div>${meals.length ? `<div class="meal-grid">${meals.map(mealCard).join('')}</div>` : emptyPanel('🍲', 'No meals yet', 'Plan one with ChatGPT or Claude and send it here, or start one with New meal.')}`
 }
 
 function mealPage() {
   let m = currentMeal();
   if (!m) return mealsPage();
-  return `<button class="text-btn" onclick="go('meals')">← All meal collections</button><div style="height:15px"></div><div class="eyebrow">MEAL COLLECTION</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">${escapeHtml(m.name)}</h1><p class="subhead">${escapeHtml(m.desc)}</p><div class="row muted small">◷ ${escapeHtml(m.time)} &nbsp;·&nbsp; ${m.recipes.length} recipes &nbsp;·&nbsp; Serves ${escapeHtml(m.servings)}</div></div><div class="actions"><button class="secondary" onclick="reviseMeal()">✧ Revise with AI</button><button class="outline" onclick="openImport()">＋ Import</button></div></div><div class="tabs"><button class="tab ${mealTab==='recipes'?'active':''}" onclick="mealTab='recipes';render()">Recipes (${m.recipes.length})</button><button class="tab ${mealTab==='shopping'?'active':''}" onclick="mealTab='shopping';render()">Shopping list</button><button class="tab ${mealTab==='timeline'?'active':''}" onclick="mealTab='timeline';render()">Cooking timeline</button></div>${mealTab==='recipes'?`<div class="section-head" style="margin-top:12px"><h2>Courses & recipes</h2><button class="text-btn" onclick="go('ai')">✧ Plan with AI</button></div><div class="recipe-list">${m.recipes.length?m.recipes.map((r,i)=>`<div class="recipe-row" onclick="showRecipe(${i})"><div class="recipe-icon">${escapeHtml(r.icon)}</div><div><h3>${escapeHtml(r.title)}</h3><p>${escapeHtml([r.course,r.time].filter(Boolean).join(' · '))}</p></div><span class="arrow">›</span></div>`).join(''):`<div class="panel empty"><div style="font-size:34px;margin-bottom:12px">🥘</div><strong>No recipes yet</strong><p class="small">Import a recipe bundle from your AI, and all the courses will appear here.</p><button class="primary" onclick="openImport()">Import recipes</button></div>`}</div>`:mealTab==='shopping'?shoppingPage(true):timelinePage(true)}<div class="actions" style="margin-top:20px"><button class="secondary" onclick="go('shopping')">☷ Open full shopping list</button><button class="secondary" onclick="go('timeline')">◷ Plan cooking order</button></div>`
+  return `<button class="text-btn" onclick="go('meals')">← All meal collections</button><div style="height:15px"></div><div class="eyebrow">MEAL COLLECTION</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">${escapeHtml(m.name)}</h1><p class="subhead">${escapeHtml(m.desc)}</p><div class="row muted small">◷ ${escapeHtml(m.time)} &nbsp;·&nbsp; ${m.recipes.length} recipes &nbsp;·&nbsp; Serves ${escapeHtml(m.servings)}</div></div><div class="actions"><button class="secondary" onclick="reviseMeal()">✧ Revise with AI</button><button class="outline" onclick="openImport()">＋ Import</button></div></div><div class="tabs"><button class="tab ${mealTab==='recipes'?'active':''}" onclick="mealTab='recipes';render()">Recipes (${m.recipes.length})</button><button class="tab ${mealTab==='shopping'?'active':''}" onclick="mealTab='shopping';render()">Shopping list</button><button class="tab ${mealTab==='timeline'?'active':''}" onclick="mealTab='timeline';render()">Cooking timeline</button></div>${mealTab==='recipes'?`<div class="section-head" style="margin-top:12px"><h2>Courses & recipes</h2><button class="text-btn" onclick="go('ai')">✧ Plan with AI</button></div><div class="recipe-list">${m.recipes.length?m.recipes.map((r,i)=>`<div class="recipe-row" onclick="showRecipe(${i})"><div class="recipe-icon">${escapeHtml(r.icon)}</div><div><h3>${escapeHtml(r.title)}</h3><p>${escapeHtml([r.course,r.time].filter(Boolean).join(' · '))}</p></div><span class="arrow">›</span></div>`).join(''):`<div class="panel empty"><div style="font-size:34px;margin-bottom:12px">🥘</div><strong>No recipes yet</strong><p class="small">Import a recipe bundle from your AI, and all the courses will appear here.</p><button class="primary" onclick="openImport()">Import recipes</button></div>`}</div>`:mealTab==='shopping'?shoppingPage(true):timelinePage(true)}<div class="actions" style="margin-top:20px"><button class="secondary" onclick="go('shopping')">☷ Open full shopping list</button><button class="secondary" onclick="go('timeline')">◷ Plan cooking order</button></div><div class="divider" style="margin-top:28px"></div><button class="outline danger" onclick="confirmDeleteMeal()">Delete meal</button>`
 }
 
 function showRecipe(i) {
@@ -693,7 +693,7 @@ function showRecipe(i) {
     ['Total', r.time],
     ['Serves', str(r.servings || '')]
   ].filter(f => f[1]);
-  openModal(`<div class="eyebrow">${escapeHtml(m.name)}</div><h2>${escapeHtml(r.icon)} ${escapeHtml(r.title)}</h2>${r.course?`<p class="subhead" style="margin-bottom:10px">${escapeHtml(r.course)}</p>`:''}${facts.length?`<div class="muted small" style="margin-bottom:14px">${facts.map(f=>`${f[0]}: <strong>${escapeHtml(f[1])}</strong>`).join(' &nbsp;·&nbsp; ')}</div>`:''}${r.ingredients.length?`<div class="panel"><strong>Ingredients</strong>${r.ingredients.map(x=>`<div class="checkrow"><span>${escapeHtml(x.name)}${x.notes?` <span class="muted small">(${escapeHtml(x.notes)})</span>`:''}</span><span class="qty">${escapeHtml(fmtQty(x.quantity,x.unit))}</span></div>`).join('')}</div>`:''}${r.instructions.length?`<div class="panel"><strong>Instructions</strong><ol style="padding-left:20px;margin:10px 0 0;line-height:1.6;font-size:14px">${r.instructions.map(s=>`<li style="margin-bottom:8px">${escapeHtml(s)}</li>`).join('')}</ol></div>`:''}${r.ingredients.length||r.instructions.length?'':`<div class="panel"><p class="muted small" style="line-height:1.6;margin:0">No ingredients or steps are saved for this recipe. Send the meal from ChatGPT or Claude to get the full recipe.</p></div>`}${r.makeAhead?`<div class="panel"><strong>Make ahead</strong><p class="muted small" style="line-height:1.6;margin-bottom:0">${escapeHtml(r.makeAhead)}</p></div>`:''}${r.source?`<p class="muted small">Source: ${escapeHtml(r.source)}</p>`:''}<div class="modal-foot"><button class="secondary" onclick="askAbout('recipe',${i})">✧ Ask AI</button><button class="secondary" onclick="openFromRecipe(${i},'shopping')">Shopping list</button><button class="primary" onclick="closeModal()">Done</button></div>`)
+  openModal(`<div class="eyebrow">${escapeHtml(m.name)}</div><h2>${escapeHtml(r.icon)} ${escapeHtml(r.title)}</h2>${r.course?`<p class="subhead" style="margin-bottom:10px">${escapeHtml(r.course)}</p>`:''}${facts.length?`<div class="muted small" style="margin-bottom:14px">${facts.map(f=>`${f[0]}: <strong>${escapeHtml(f[1])}</strong>`).join(' &nbsp;·&nbsp; ')}</div>`:''}${r.ingredients.length?`<div class="panel"><strong>Ingredients</strong>${r.ingredients.map(x=>`<div class="checkrow"><span>${escapeHtml(x.name)}${x.notes?` <span class="muted small">(${escapeHtml(x.notes)})</span>`:''}</span><span class="qty">${escapeHtml(fmtQty(x.quantity,x.unit))}</span></div>`).join('')}</div>`:''}${r.instructions.length?`<div class="panel"><strong>Instructions</strong><ol style="padding-left:20px;margin:10px 0 0;line-height:1.6;font-size:14px">${r.instructions.map(s=>`<li style="margin-bottom:8px">${escapeHtml(s)}</li>`).join('')}</ol></div>`:''}${r.ingredients.length||r.instructions.length?'':`<div class="panel"><p class="muted small" style="line-height:1.6;margin:0">No ingredients or steps are saved for this recipe. Send the meal from ChatGPT or Claude to get the full recipe.</p></div>`}${r.makeAhead?`<div class="panel"><strong>Make ahead</strong><p class="muted small" style="line-height:1.6;margin-bottom:0">${escapeHtml(r.makeAhead)}</p></div>`:''}${r.source?`<p class="muted small">Source: ${escapeHtml(r.source)}</p>`:''}<button class="text-btn danger" style="margin-top:6px" onclick="confirmDeleteRecipe(${i})">Delete this recipe</button><div class="modal-foot"><button class="secondary" onclick="askAbout('recipe',${i})">✧ Ask AI</button><button class="secondary" onclick="openFromRecipe(${i},'shopping')">Shopping list</button><button class="primary" onclick="closeModal()">Done</button></div>`)
 }
 
 function showRecipeTitled(title) {
@@ -905,6 +905,53 @@ window.receiveClipboardText = function(text) {
 
 function looksLikeUnfinishedExport(text) {
   return /"format"\s*:\s*"mealkeeper-v1"|"meals"\s*:\s*\[/.test(text || '');
+}
+
+function confirmDeleteMeal() {
+  let m = currentMeal();
+  if (!m) return;
+  openModal(`<h2>Delete “${escapeHtml(m.name)}”?</h2><p class="subhead">The meal goes with its ${m.recipes.length} recipe(s), shopping list and timeline. This can't be undone, but restoring a backup (Settings) brings it back.</p><div class="modal-foot"><button class="outline" onclick="closeModal()">Cancel</button><button class="primary danger-fill" onclick="deleteMeal(${m.id})">Delete meal</button></div>`, true);
+}
+
+function deleteMeal(id) {
+  let i = meals.findIndex(m => m.id === id);
+  if (i < 0) return;
+  let [gone] = meals.splice(i, 1);
+  // Drop history that would lead back to it (meal pages show the selected meal, which is about to change).
+  navStack = navStack.filter(e => e !== 'meal' && !(typeof e === 'object' && e.meal === id));
+  if (selectedMeal === id && meals.length) selectedMeal = meals[0].id;
+  closeModal();
+  page = 'meals';
+  render();
+  notify(`Deleted “${gone.name}”`);
+}
+
+// What deleting recipe i takes with it: its timeline steps, and shopping items that no other recipe uses.
+function recipeDeletion(m, i) {
+  let r = m.recipes[i];
+  return {
+    r,
+    steps: m.timeline.filter(t => t.recipeId && t.recipeId === r.id),
+    items: m.shopping.filter(x => x.usedIn.length && x.usedIn.every(title => title === r.title))
+  };
+}
+
+function confirmDeleteRecipe(i) {
+  let m = currentMeal(), {r, steps, items} = recipeDeletion(m, i),
+    also = [items.length && `${items.length} shopping item(s) only it uses`, steps.length && `${steps.length} timeline step(s)`].filter(Boolean).join(' and ');
+  openModal(`<h2>Delete “${escapeHtml(r.title)}”?</h2><p class="subhead">It comes out of ${escapeHtml(m.name)}${also ? `, along with ${also}` : ''}.</p><div class="modal-foot"><button class="outline" onclick="showRecipe(${i})">Cancel</button><button class="primary danger-fill" onclick="deleteRecipe(${i})">Delete recipe</button></div>`, true);
+}
+
+function deleteRecipe(i) {
+  let m = currentMeal(), {r, steps, items} = recipeDeletion(m, i);
+  m.recipes.splice(i, 1);
+  m.timeline = m.timeline.filter(t => !steps.includes(t));
+  m.shopping = m.shopping.filter(x => !items.includes(x)).map(x => ({...x, usedIn: x.usedIn.filter(title => title !== r.title)}));
+  // Saved "back to recipe" entries for this meal point at recipe positions that just shifted.
+  navStack = navStack.filter(e => !(typeof e === 'object' && e.meal === m.id));
+  closeModal();
+  render();
+  notify(`Deleted “${r.title}”`);
 }
 
 function toggleItem(i, v) {

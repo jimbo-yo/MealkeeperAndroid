@@ -313,6 +313,50 @@ test('the most recently opened, picked or imported meal comes first', () => {
   eq(saved.meals.map(m => m.id).slice(0, 2), [1, meals[1].id], 'order is saved');
 });
 
+// ---- Deleting ----
+
+test('deleting a meal asks first, then removes it and is saved', () => {
+  openMeal(1);
+  main().querySelector('.outline.danger').click();
+  assert(modal().textContent.includes('Delete “Sunday Italian supper”?'), 'no confirmation');
+  modal().querySelector('.modal-foot .outline').click();
+  eq(meals.length, 4, 'Cancel keeps it');
+  confirmDeleteMeal();
+  modal().querySelector('.danger-fill').click();
+  eq([meals.length, page, meals.some(m => m.id === 1)], [3, 'meals', false]);
+  assert(selectedMeal !== 1, 'another meal is selected');
+  eq(JSON.parse(localStorage.getItem(STORE_KEY)).meals.length, 3);
+  eq(handleBack() && page, 'home', 'Back doesn\'t return to the deleted meal');
+});
+
+test('with every meal deleted, the Meals page says so', () => {
+  [...meals].forEach(m => deleteMeal(m.id));
+  eq(meals.length, 0);
+  assert(main().textContent.includes('No meals yet'), main().textContent.slice(0, 120));
+  go('home');
+  go('shopping');
+  go('timeline');
+  assert(main().textContent.includes('No cooking timeline yet'));
+});
+
+test('deleting a recipe takes its steps and the shopping items only it used', () => {
+  let m = meals[0];
+  openMeal(1);
+  showRecipe(2);
+  modal().querySelector('.text-btn.danger').click();
+  assert(modal().textContent.includes('along with 3 shopping item(s) only it uses and 1 timeline step(s)'), modal().textContent);
+  modal().querySelector('.modal-foot .outline').click();
+  assert(modal().textContent.includes('Ingredients'), 'Cancel goes back to the recipe');
+  confirmDeleteRecipe(2);
+  modal().querySelector('.danger-fill').click();
+  eq(m.recipes.map(r => r.title), ['Roasted tomato bruschetta', 'Sausage & pepper rigatoni']);
+  eq(['Ricotta cheese', 'Lemons', 'Honey'].filter(n => m.shopping.some(x => x.name === n)), []);
+  eq(m.timeline.some(t => t.recipeId === 'ricotta'), false);
+  eq(m.shopping.length, 11);
+  deleteRecipe(0);
+  eq(m.shopping.find(x => x.name === 'Olive oil').usedIn, ['Sausage & pepper rigatoni'], 'shared items stay, minus the recipe');
+});
+
 // ---- Saving, backups and restore ----
 
 test('every change is saved and loads back', () => {

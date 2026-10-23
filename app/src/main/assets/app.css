@@ -369,6 +369,18 @@ button:active {
   font-weight: 700;
 }
 
+.danger {
+  color: light-dark(#a23b24, #f2a98a);
+}
+
+.outline.danger {
+  border-color: light-dark(#dcb7aa, #6b4a3f);
+}
+
+.primary.danger-fill {
+  background: #b5452b;
+}
+
 .actions {
   display: flex;
   gap: 8px;
