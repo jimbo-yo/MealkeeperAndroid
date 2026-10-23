@@ -607,8 +607,10 @@ function notify(s) {
   window._toast = setTimeout(() => t.style.display = 'none', 2500)
 }
 
-function openModal(html) {
+// centered: show mid-screen instead of as a bottom sheet (see offerImport).
+function openModal(html, centered = false) {
   document.getElementById('modal').innerHTML = html;
+  document.getElementById('modal-bg').classList.toggle('centered', centered);
   document.getElementById('modal-bg').style.display = 'flex'
 }
 
@@ -798,7 +800,9 @@ function offerImport(text, source) {
     `${notNow}<button class="secondary" onclick="confirmImport('copy')">Save as new</button><button class="primary" onclick="confirmImport('update')">Update</button>` :
     `${notNow}<button class="primary" onclick="confirmImport('update')">Import</button>`;
   if (matches.length) detail += n === 1 ? '. This replaces its recipes, shopping list and timeline; items you checked off stay checked.' : `. ${matches.length} of them will update meals you already have.`;
-  openModal(`<div class="eyebrow">${source}</div><h2>${matches.length && n === 1 ? 'Update' : 'Import'} ${escapeHtml(title)}?</h2><p class="subhead">${escapeHtml(detail)}</p><div class="modal-foot">${buttons}</div>`);
+  // Centred: when the user comes back from copying in ChatGPT or Claude, Android's copy preview and "pasted from
+  // your clipboard" notice sit at the bottom of the screen for a few seconds and would cover a bottom sheet.
+  openModal(`<div class="eyebrow">${source}</div><h2>${matches.length && n === 1 ? 'Update' : 'Import'} ${escapeHtml(title)}?</h2><p class="subhead">${escapeHtml(detail)}</p><div class="modal-foot">${buttons}</div>`, true);
   return true;
 }
 

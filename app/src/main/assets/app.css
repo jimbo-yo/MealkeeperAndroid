@@ -173,6 +173,14 @@ button:active {
   box-shadow: 0 20px 80px #0003;
 }
 
+.modal-bg.centered {
+  align-items: center;
+}
+
+.modal-bg.centered .modal {
+  border-radius: 24px;
+}
+
 .modal h2 {
   margin: 0 0 7px;
   font-size: 22px;

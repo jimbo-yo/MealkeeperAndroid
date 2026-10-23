@@ -199,6 +199,7 @@ test('meals without a timeline show an empty state', () => {
 test('recipe details show ingredients, steps and make-ahead notes', () => {
   openMeal(1);
   showRecipe(0);
+  assert(!document.getElementById('modal-bg').classList.contains('centered'), 'other dialogs stay bottom sheets');
   eq(modal().querySelectorAll('ol li').length, 3);
   assert(modal().textContent.includes('Cherry tomatoes'), 'ingredient missing');
   assert(modal().textContent.includes('Make ahead'), 'make-ahead missing');
@@ -354,6 +355,7 @@ test('a copied meal is offered, then imported and opened', () => {
   assert(modalOpen(), 'no offer');
   assert(modal().textContent.includes('Import Mediterranean chicken bowls?'), modal().textContent);
   assert(modal().textContent.includes('2 recipes · 6 shopping items · cooking timeline'), modal().textContent);
+  assert(document.getElementById('modal-bg').classList.contains('centered'), 'offer should be centred, clear of Android\'s overlays');
   eq(meals.length, 4, 'imported before confirming');
   confirmImport();
   eq([meals.length, page, currentMeal().name, modalOpen()], [5, 'meal', 'Mediterranean chicken bowls', false]);

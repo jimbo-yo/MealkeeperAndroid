@@ -13,6 +13,8 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -22,6 +24,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import org.json.JSONObject
 
 class MainActivity : Activity() {
@@ -33,6 +36,7 @@ class MainActivity : Activity() {
     private var safeTopDp = 44
     private var safeBottomDp = 0
     private val prefs: SharedPreferences by lazy { getSharedPreferences("mealkeeper", MODE_PRIVATE) }
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -126,7 +130,44 @@ class MainActivity : Activity() {
         ) return
         val text = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString() ?: return
         if (text.length > MAX_CLIP_CHARS || !(text.contains("\"meals\"") || text.contains("\"recipes\""))) return
-        runJs("window.receiveClipboardText&&window.receiveClipboardText(${JSONObject.quote(text)})")
+        // A short pause so the offer doesn't pop up the instant the user comes back. (Android's copy preview and
+        // "pasted" notice can last longer than this; the page shows the offer mid-screen to stay clear of them.)
+        val script = "window.receiveClipboardText&&window.receiveClipboardText(${JSONObject.quote(text)})"
+        mainHandler.postDelayed({ runJs(script) }, CLIP_OFFER_DELAY_MS)
+    }
+
+    private fun copyToClipboard(text: String) {
+        val clipboard = getSystemService(ClipboardManager::class.java) ?: return
+        clipboard.setPrimaryClip(ClipData.newPlainText("Mealkeeper", text))
+        // The app's own copies (prompts, setup instructions, shopping list) shouldn't come back as import offers.
+        clipboard.primaryClipDescription?.let { markClipSeen(it) }
+    }
+
+    private fun startOther(intent: Intent): Boolean = try {
+        startActivity(intent)
+        true
+    } catch (e: ActivityNotFoundException) {
+        false
+    }
+
+    private fun launchAiApp(ai: String): Boolean {
+        val launch = AI_APPS[ai]?.let { packageManager.getLaunchIntentForPackage(it.packageName) } ?: return false
+        return startOther(launch)
+    }
+
+    // Claude's share handler has occasionally finished without opening a chat. If Mealkeeper still has focus once
+    // the AI app should be in front, copy the prompt and open the app so the user can paste it. The toast is
+    // Android's rather than the page's so it stays visible over the AI app.
+    private fun checkAiAppOpened(ai: String, text: String) {
+        mainHandler.postDelayed({
+            if (!hasWindowFocus()) return@postDelayed
+            val name = AI_APPS[ai]?.name ?: return@postDelayed
+            copyToClipboard(text)
+            val opened = launchAiApp(ai)
+            val message = if (opened) "$name didn't pick up the prompt. It's copied: paste it into a new chat."
+            else "Couldn't open $name. The prompt is copied."
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        }, AI_LAUNCH_CHECK_MS)
     }
 
     private fun markClipSeen(description: ClipDescription) {
@@ -213,12 +254,7 @@ class MainActivity : Activity() {
     inner class MealkeeperBridge {
         @JavascriptInterface
         fun copyText(text: String) {
-            runOnUiThread {
-                val clipboard = getSystemService(ClipboardManager::class.java) ?: return@runOnUiThread
-                clipboard.setPrimaryClip(ClipData.newPlainText("Mealkeeper", text))
-                // The app's own copies (setup instructions, shopping list) shouldn't come back as import offers.
-                clipboard.primaryClipDescription?.let { markClipSeen(it) }
-            }
+            runOnUiThread { copyToClipboard(text) }
         }
 
         @JavascriptInterface
@@ -278,26 +314,19 @@ class MainActivity : Activity() {
         // Returns "shared", "opened" (the app was launched without the text), or "missing" (not installed).
         @JavascriptInterface
         fun sendToAiApp(ai: String, text: String): String {
-            val pkg = AI_APPS[ai] ?: return "missing"
+            val app = AI_APPS[ai] ?: return "missing"
             // NEW_TASK: otherwise the AI app's screen joins Mealkeeper's task, and returning to Mealkeeper shows it again.
-            val share = Intent(Intent.ACTION_SEND).setPackage(pkg).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            if (share.resolveActivity(packageManager) != null && start(share)) return "shared"
-            return if (openAiApp(ai)) "opened" else "missing"
+            val share = Intent(Intent.ACTION_SEND).setPackage(app.packageName).setType("text/plain")
+                .putExtra(Intent.EXTRA_TEXT, text).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (share.resolveActivity(packageManager) != null && startOther(share)) {
+                checkAiAppOpened(ai, text)
+                return "shared"
+            }
+            return if (launchAiApp(ai)) "opened" else "missing"
         }
 
         @JavascriptInterface
-        fun openAiApp(ai: String): Boolean {
-            val launch = AI_APPS[ai]?.let { packageManager.getLaunchIntentForPackage(it) } ?: return false
-            return start(launch)
-        }
-
-        private fun start(intent: Intent): Boolean = try {
-            startActivity(intent)
-            true
-        } catch (e: ActivityNotFoundException) {
-            false
-        }
+        fun openAiApp(ai: String): Boolean = launchAiApp(ai)
 
         @JavascriptInterface
         fun shareText(text: String, title: String) {
@@ -330,6 +359,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         if (::webView.isInitialized) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             webView.destroy()
@@ -344,6 +374,13 @@ class MainActivity : Activity() {
         private const val PREF_LAST_CLIP = "lastClipTimestamp"
         private const val MAX_CLIP_CHARS = 500_000
         // The page refers to the AI apps by these keys; the packages are also listed under <queries> in the manifest.
-        private val AI_APPS = mapOf("chatgpt" to "com.openai.chatgpt", "claude" to "com.anthropic.claude")
+        private val AI_APPS = mapOf(
+            "chatgpt" to AiApp("com.openai.chatgpt", "ChatGPT"),
+            "claude" to AiApp("com.anthropic.claude", "Claude")
+        )
+        private const val AI_LAUNCH_CHECK_MS = 2500L
+        private const val CLIP_OFFER_DELAY_MS = 1000L
     }
 }
+
+private class AiApp(val packageName: String, val name: String)
