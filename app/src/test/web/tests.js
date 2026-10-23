@@ -111,7 +111,7 @@ test('import with no meals shows an error and keeps the dialog open', () => {
 
 test('imports the full mealkeeper-v1 sample', () => {
   importViaDialog(sampleExport);
-  let m = meals[meals.length - 1];
+  let m = meals[0];
   eq([page, selectedMeal], ['meal', m.id], 'a single imported meal opens');
   eq(m.time, '30 min');
   eq(m.recipes.map(r => [r.title, r.time, r.ingredients.length, r.instructions.length]),
@@ -127,7 +127,7 @@ test('builds the shopping list from ingredients when the export has none', () =>
   let data = JSON.parse(sampleExport);
   delete data.meals[0].shopping_list;
   importMeals(data);
-  let list = meals[meals.length - 1].shopping, oil = list.find(x => x.name === 'Olive oil');
+  let list = meals[0].shopping, oil = list.find(x => x.name === 'Olive oil');
   eq(list.length, 6);
   eq(oil.qty, '3 tbsp', '2 tbsp + 1 tbsp');
   eq(oil.usedIn.length, 2);
@@ -135,13 +135,13 @@ test('builds the shopping list from ingredients when the export has none', () =>
 
 test('imports the older minimal export (titles and time strings only)', () => {
   importMeals(parseMealkeeperJson('{"meals":[{"name":"Old","total_time":"35 min","recipes":[{"title":"A","total_time":"25 min"}]}]}'));
-  let m = meals[meals.length - 1];
+  let m = meals[0];
   eq([m.time, m.recipes[0].time, m.shopping.length], ['35 min', '25 min', 0]);
 });
 
 test('imported text is shown as text, never as HTML', () => {
   importMeals(HOSTILE);
-  let id = meals[meals.length - 1].id;
+  let id = meals[0].id;
   for (let p of ['meals', 'shopping', 'timeline']) {
     selectedMeal = id;
     go(p);
@@ -291,6 +291,26 @@ test('recipe names on the timeline open the recipe', () => {
   go('timeline');
   main().querySelector('.recipe-link').click();
   assert(modal().textContent.includes('Sausage & pepper rigatoni'));
+});
+
+test('the most recently opened, picked or imported meal comes first', () => {
+  const order = () => meals.map(m => m.id);
+  openMeal(3);
+  eq(order(), [3, 1, 2, 4]);
+  go('home');
+  eq(main().querySelector('.meal-card h3').textContent, 'Cozy autumn dinner', 'Home lists it first');
+  go('shopping');
+  let picker = main().querySelector('select');
+  picker.value = '4';
+  picker.dispatchEvent(new Event('change'));
+  eq(order(), [4, 3, 1, 2]);
+  importMeals(parseMealkeeperJson(sampleExport));
+  eq(meals[0].name, 'Mediterranean chicken bowls');
+  receiveClipboardText(revisedSupper());
+  confirmImport('update');
+  eq(meals[0].id, 1, 'an AI update brings the meal back to the top');
+  let saved = JSON.parse(localStorage.getItem(STORE_KEY));
+  eq(saved.meals.map(m => m.id).slice(0, 2), [1, meals[1].id], 'order is saved');
 });
 
 // ---- Saving, backups and restore ----
@@ -482,7 +502,7 @@ test('a meal survives export to the AI format and back', () => {
 
 // What an AI might send back after "make it vegetarian": same id, sausage swapped for mushrooms.
 function revisedSupper(changes = {}) {
-  let v1 = toV1Meal(meals[0]);
+  let v1 = toV1Meal(meals.find(m => m.id === 1));
   v1.recipes[1].title = 'Mushroom & pepper rigatoni';
   v1.recipes[1].ingredients[0] = {name: 'Cremini mushrooms', quantity: 1, unit: 'lb', notes: 'sliced'};
   v1.shopping_list = v1.shopping_list.filter(x => x.name !== 'Italian sausage links');
@@ -509,7 +529,8 @@ test('a revised meal from the AI updates the original', () => {
 test('"Save as new" keeps the original and adds the revision', () => {
   receiveClipboardText(revisedSupper());
   confirmImport('copy');
-  eq([meals.length, meals[0].recipes[1].title, meals[4].recipes[1].title], [5, 'Sausage & pepper rigatoni', 'Mushroom & pepper rigatoni']);
+  let original = meals.find(m => m.id === 1);
+  eq([meals.length, meals[0].recipes[1].title, original.recipes[1].title], [5, 'Mushroom & pepper rigatoni', 'Sausage & pepper rigatoni']);
 });
 
 test('a revision without its id is matched by name', () => {

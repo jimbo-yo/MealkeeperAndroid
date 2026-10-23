@@ -557,9 +557,22 @@ function go(p) {
   })
 }
 
+// Meals are kept most recently used first, so Home's "Recent" list, Meals and the meal picker follow that order.
+function bringToFront(m) {
+  let i = meals.indexOf(m);
+  if (i > 0) meals.unshift(...meals.splice(i, 1));
+}
+
+function pickMeal(id) {
+  selectedMeal = id;
+  bringToFront(currentMeal());
+  render();
+}
+
 function openMeal(id) {
   if (page !== 'meal') navStack.push(page);
   selectedMeal = id;
+  bringToFront(currentMeal());
   mealTab = 'recipes';
   page = 'meal';
   render();
@@ -762,7 +775,7 @@ function aiChoice() {
 }
 
 function mealPicker(m) {
-  return meals.length < 2 ? '' : `<label class="field-label" style="margin-top:0">Meal</label><select class="field" style="margin-bottom:18px" onchange="selectedMeal=Number(this.value);render()">${meals.map(x=>`<option value="${x.id}" ${x===m?'selected':''}>${escapeHtml(x.name)}</option>`).join('')}</select>`
+  return meals.length < 2 ? '' : `<label class="field-label" style="margin-top:0">Meal</label><select class="field" style="margin-bottom:18px" onchange="pickMeal(Number(this.value))">${meals.map(x=>`<option value="${x.id}" ${x===m?'selected':''}>${escapeHtml(x.name)}</option>`).join('')}</select>`
 }
 
 function emptyPanel(icon, title, text) {
@@ -828,11 +841,12 @@ function importMeals(parsed, mode = 'update') {
     if (target) {
       updateMeal(target, fresh, obj(v1));
       updated.push(target);
+      bringToFront(target);
     } else {
-      meals.push(fresh);
       added.push(fresh);
     }
   });
+  meals.unshift(...added);
   closeModal();
   let all = updated.concat(added);
   if (all.length === 1) {
