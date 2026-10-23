@@ -23,13 +23,13 @@ The first Gradle sync needs internet access to download the Android Gradle Plugi
 
 - The existing responsive Mealkeeper interface is bundled locally; it does not need a network connection at runtime.
 - The **Keep screen awake** setting is connected to Android's `FLAG_KEEP_SCREEN_ON`.
-- Meal collections and shopping items are currently demo data held in the page's JavaScript memory. They are not yet stored permanently, so this is a starter project rather than a finished recipe manager.
+- Meal collections, shopping-list check marks, and the keep-awake setting are saved in the WebView's `localStorage` on the device. **Settings → Backup & restore** exports them to a JSON file (`mealkeeper-backup-v1`) through the Android file picker and restores them from one. The shopping list and cooking timeline themselves are still demo data.
 - The prototype's import flow can add simplified meal/recipe entries from the sample `mealkeeper-v1` JSON. Full ingredient, instruction, shopping-list, and timeline parsing still needs implementation.
 - This is a WebView-based starter so you can begin working in Android Studio right away. You can gradually migrate screens to native Kotlin/Jetpack Compose later.
 
 ## Suggested next steps
 
-1. Add persistent local storage with Room.
+1. Move storage from `localStorage` to Room (or IndexedDB) once the data model settles.
 2. Define Kotlin data classes for meals, recipes, ingredients, and timeline steps.
 3. Validate and fully parse `mealkeeper-v1` JSON on import.
 4. Generate the combined shopping list from recipe ingredients.

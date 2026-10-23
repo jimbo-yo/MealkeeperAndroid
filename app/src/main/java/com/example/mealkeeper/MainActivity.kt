@@ -2,6 +2,7 @@ package com.example.mealkeeper
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -17,7 +18,9 @@ import org.json.JSONObject
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
-    private var pendingSharedText: String? = null
+    // Scripts that arrive before the page has loaded (shared text, file-picker results) run once it has.
+    private val pendingScripts = mutableListOf<String>()
+    private var pendingBackupJson: String? = null
     private var isPageLoaded = false
     private var safeTopDp = 44
 
@@ -50,10 +53,8 @@ class MainActivity : Activity() {
                     isPageLoaded = true
                     // Insets usually arrive before the page loads, so re-apply them here.
                     applySafeTop()
-                    pendingSharedText?.let { text ->
-                        dispatchSharedTextToWeb(text)
-                        pendingSharedText = null
-                    }
+                    pendingScripts.forEach { runJs(it) }
+                    pendingScripts.clear()
                 }
             }
             addJavascriptInterface(MealkeeperBridge(), "MealkeeperAndroid")
@@ -90,11 +91,7 @@ class MainActivity : Activity() {
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
             if (!sharedText.isNullOrBlank()) {
-                if (isPageLoaded) {
-                    dispatchSharedTextToWeb(sharedText)
-                } else {
-                    pendingSharedText = sharedText
-                }
+                runJs("if(window.receiveSharedText){window.receiveSharedText(${JSONObject.quote(sharedText)});}")
             }
         }
     }
@@ -108,17 +105,76 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun dispatchSharedTextToWeb(text: String) {
-        val quoted = JSONObject.quote(text)
-        webView.post {
-            webView.evaluateJavascript(
-                "if(window.receiveSharedText){window.receiveSharedText($quoted);}",
-                null
-            )
+    private fun runJs(script: String) {
+        if (!isPageLoaded) {
+            pendingScripts.add(script)
+            return
+        }
+        webView.post { webView.evaluateJavascript(script, null) }
+    }
+
+    @Deprecated("Plain Activity has no Activity Result API; this is the framework callback.")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        val uri = data?.data
+        when (requestCode) {
+            REQUEST_EXPORT_BACKUP -> {
+                val json = pendingBackupJson
+                pendingBackupJson = null
+                if (resultCode != RESULT_OK || uri == null) return
+                // json is null if the process died while the picker was open.
+                val saved = json != null && runCatching {
+                    contentResolver.openOutputStream(uri, "wt")!!.use { it.write(json.toByteArray()) }
+                }.isSuccess
+                runJs("window.onBackupSaved&&window.onBackupSaved($saved)")
+            }
+            REQUEST_RESTORE_BACKUP -> {
+                if (resultCode != RESULT_OK || uri == null) return
+                val text = runCatching {
+                    contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
+                }.getOrDefault("")
+                runJs("window.receiveBackupFile&&window.receiveBackupFile(${JSONObject.quote(text)})")
+            }
         }
     }
 
     inner class MealkeeperBridge {
+        @JavascriptInterface
+        fun saveBackupFile(filename: String, json: String) {
+            runOnUiThread {
+                pendingBackupJson = json
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_TITLE, filename)
+                }
+                try {
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(intent, REQUEST_EXPORT_BACKUP)
+                } catch (e: ActivityNotFoundException) {
+                    pendingBackupJson = null
+                    shareText(json, "Save Mealkeeper backup")
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun openBackupFile() {
+            runOnUiThread {
+                // JSON files are often typed application/octet-stream by file providers, so accept anything.
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                }
+                try {
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(intent, REQUEST_RESTORE_BACKUP)
+                } catch (e: ActivityNotFoundException) {
+                    runJs("window.notify&&window.notify('No file picker available on this device')")
+                }
+            }
+        }
+
         @JavascriptInterface
         fun setKeepScreenOn(enabled: Boolean) {
             runOnUiThread {
@@ -181,5 +237,10 @@ class MainActivity : Activity() {
             webView.destroy()
         }
         super.onDestroy()
+    }
+
+    companion object {
+        private const val REQUEST_EXPORT_BACKUP = 41
+        private const val REQUEST_RESTORE_BACKUP = 42
     }
 }
