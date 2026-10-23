@@ -478,15 +478,19 @@ function exportBackup() {
   if (window.MealkeeperAndroid && window.MealkeeperAndroid.saveBackupFile) {
     window.MealkeeperAndroid.saveBackupFile(name, data)
   } else {
-    let a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([data], {
-      type: 'application/json'
-    }));
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    downloadFile(name, data);
     notify('Backup downloaded')
   }
+}
+
+function downloadFile(name, data) {
+  let a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([data], {
+    type: 'application/json'
+  }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 window.onBackupSaved = function(ok) {
@@ -678,7 +682,7 @@ function mealsPage() {
 function mealPage() {
   let m = currentMeal();
   if (!m) return mealsPage();
-  return `<button class="text-btn" onclick="go('meals')">← All meal collections</button><div style="height:15px"></div><div class="eyebrow">MEAL COLLECTION</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">${escapeHtml(m.name)}</h1><p class="subhead">${escapeHtml(m.desc)}</p><div class="row muted small">◷ ${escapeHtml(m.time)} &nbsp;·&nbsp; ${m.recipes.length} recipes &nbsp;·&nbsp; Serves ${escapeHtml(m.servings)}</div></div><div class="actions"><button class="secondary" onclick="reviseMeal()">✧ Revise with AI</button><button class="outline" onclick="openImport()">＋ Import</button></div></div><div class="tabs"><button class="tab ${mealTab==='recipes'?'active':''}" onclick="mealTab='recipes';render()">Recipes (${m.recipes.length})</button><button class="tab ${mealTab==='shopping'?'active':''}" onclick="mealTab='shopping';render()">Shopping list</button><button class="tab ${mealTab==='timeline'?'active':''}" onclick="mealTab='timeline';render()">Cooking timeline</button></div>${mealTab==='recipes'?`<div class="section-head" style="margin-top:12px"><h2>Courses & recipes</h2><button class="text-btn" onclick="go('ai')">✧ Plan with AI</button></div><div class="recipe-list">${m.recipes.length?m.recipes.map((r,i)=>`<div class="recipe-row" onclick="showRecipe(${i})"><div class="recipe-icon">${escapeHtml(r.icon)}</div><div><h3>${escapeHtml(r.title)}</h3><p>${escapeHtml([r.course,r.time].filter(Boolean).join(' · '))}</p></div><span class="arrow">›</span></div>`).join(''):`<div class="panel empty"><div style="font-size:34px;margin-bottom:12px">🥘</div><strong>No recipes yet</strong><p class="small">Import a recipe bundle from your AI, and all the courses will appear here.</p><button class="primary" onclick="openImport()">Import recipes</button></div>`}</div>`:mealTab==='shopping'?shoppingPage(true):timelinePage(true)}<div class="actions" style="margin-top:20px"><button class="secondary" onclick="go('shopping')">☷ Open full shopping list</button><button class="secondary" onclick="go('timeline')">◷ Plan cooking order</button></div><div class="divider" style="margin-top:28px"></div><button class="outline danger" onclick="confirmDeleteMeal()">Delete meal</button>`
+  return `<button class="text-btn" onclick="go('meals')">← All meal collections</button><div style="height:15px"></div><div class="eyebrow">MEAL COLLECTION</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">${escapeHtml(m.name)}</h1><p class="subhead">${escapeHtml(m.desc)}</p><div class="row muted small">◷ ${escapeHtml(m.time)} &nbsp;·&nbsp; ${m.recipes.length} recipes &nbsp;·&nbsp; Serves ${escapeHtml(m.servings)}</div></div><div class="actions"><button class="secondary" onclick="reviseMeal()">✧ Revise with AI</button><button class="outline" onclick="shareMeal()">☍ Share</button><button class="outline" onclick="openImport()">＋ Import</button></div></div><div class="tabs"><button class="tab ${mealTab==='recipes'?'active':''}" onclick="mealTab='recipes';render()">Recipes (${m.recipes.length})</button><button class="tab ${mealTab==='shopping'?'active':''}" onclick="mealTab='shopping';render()">Shopping list</button><button class="tab ${mealTab==='timeline'?'active':''}" onclick="mealTab='timeline';render()">Cooking timeline</button></div>${mealTab==='recipes'?`<div class="section-head" style="margin-top:12px"><h2>Courses & recipes</h2><button class="text-btn" onclick="go('ai')">✧ Plan with AI</button></div><div class="recipe-list">${m.recipes.length?m.recipes.map((r,i)=>`<div class="recipe-row" onclick="showRecipe(${i})"><div class="recipe-icon">${escapeHtml(r.icon)}</div><div><h3>${escapeHtml(r.title)}</h3><p>${escapeHtml([r.course,r.time].filter(Boolean).join(' · '))}</p></div><span class="arrow">›</span></div>`).join(''):`<div class="panel empty"><div style="font-size:34px;margin-bottom:12px">🥘</div><strong>No recipes yet</strong><p class="small">Import a recipe bundle from your AI, and all the courses will appear here.</p><button class="primary" onclick="openImport()">Import recipes</button></div>`}</div>`:mealTab==='shopping'?shoppingPage(true):timelinePage(true)}<div class="actions" style="margin-top:20px"><button class="secondary" onclick="go('shopping')">☷ Open full shopping list</button><button class="secondary" onclick="go('timeline')">◷ Plan cooking order</button></div><div class="divider" style="margin-top:28px"></div><button class="outline danger" onclick="confirmDeleteMeal()">Delete meal</button>`
 }
 
 function showRecipe(i) {
@@ -905,6 +909,37 @@ window.receiveClipboardText = function(text) {
 
 function looksLikeUnfinishedExport(text) {
   return /"format"\s*:\s*"mealkeeper-v1"|"meals"\s*:\s*\[/.test(text || '');
+}
+
+// Shares a meal with another person: a file Prompt to Pan can import, plus a readable version for anyone without
+// the app. mealkeeper_id is left out because it only means something in this app; the receiver matches by name.
+function shareMeal() {
+  let m = currentMeal();
+  if (!m) return;
+  let v1 = toV1Meal(m);
+  delete v1.mealkeeper_id;
+  let json = JSON.stringify({format: 'mealkeeper-v1', meals: [v1]}, null, 1),
+    text = mealText(m),
+    name = `${m.name}.prompttopan.json`,
+    android = window.MealkeeperAndroid;
+  if (android && android.shareMeal) return android.shareMeal(name, json, text, m.name);
+  let file = typeof File === 'function' && new File([json], name, {type: 'application/json'});
+  if (file && navigator.canShare && navigator.canShare({files: [file]})) {
+    navigator.share({files: [file], text, title: m.name}).catch(() => {});
+  } else {
+    downloadFile(name, json);
+    notify('Meal file downloaded');
+  }
+}
+
+function mealText(m) {
+  let facts = [m.servings && `serves ${m.servings}`, m.time && m.time !== '—' && m.time].filter(Boolean).join(', ');
+  return [
+    m.name + (facts ? ` (${facts})` : ''),
+    m.desc,
+    ...m.recipes.map(recipeText),
+    'Shared from Prompt to Pan. Open the attached file in the app to get the shopping list and cooking timeline too.'
+  ].filter(Boolean).join('\n\n');
 }
 
 function confirmDeleteMeal() {

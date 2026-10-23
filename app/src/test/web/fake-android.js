@@ -26,6 +26,9 @@ window.MealkeeperAndroid = {
   copyText(text) {
     this.calls.push(['copyText', text]);
   },
+  shareMeal(fileName, json, text, title) {
+    this.calls.push(['shareMeal', fileName, json, text, title]);
+  },
   setAppearance(mode) {
     this.calls.push(['setAppearance', mode]);
   },

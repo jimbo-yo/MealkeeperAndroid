@@ -8,6 +8,7 @@ const modal = () => document.getElementById('modal');
 const modalOpen = () => document.getElementById('modal-bg').style.display === 'flex';
 const awakeCalls = () => bridge.calls.filter(c => c[0] === 'setKeepScreenOn').map(c => c[1]);
 const lastAwakeCall = () => awakeCalls().pop();
+const bridgeCalls = name => bridge.calls.filter(c => c[0] === name);
 const times = () => [...main().querySelectorAll('.time')].map(e => e.textContent);
 const hasMarkup = el => el.querySelector('b, i, u, img, script');
 
@@ -313,6 +314,41 @@ test('the most recently opened, picked or imported meal comes first', () => {
   eq(saved.meals.map(m => m.id).slice(0, 2), [1, meals[1].id], 'order is saved');
 });
 
+// ---- Sharing a meal with someone else ----
+
+test('Share sends an importable meal file and a readable version', () => {
+  openMeal(1);
+  [...main().querySelectorAll('button')].find(b => b.textContent.includes('Share')).click();
+  let [, fileName, json, text, title] = bridgeCalls('shareMeal')[0];
+  eq([fileName, title], ['Sunday Italian supper.prompttopan.json', 'Sunday Italian supper']);
+  let v1 = JSON.parse(json).meals[0], back = fromV1Meal(v1, 0);
+  eq('mealkeeper_id' in v1, false, 'no internal id');
+  eq([back.recipes.length, back.recipes[1].ingredients.length, back.shopping.length, back.timeline.length], [3, 7, 14, 6]);
+  assert(text.startsWith('Sunday Italian supper (serves 3, 55 min)'), text.slice(0, 60));
+  assert(text.includes('Sausage & pepper rigatoni (Main), serves 3') && text.includes('- 1 lb Italian sausage links'), 'recipes in the text');
+  assert(text.endsWith('cooking timeline too.'), 'note about the file');
+});
+
+test('a shared meal file arrives as an import offer', () => {
+  openMeal(1);
+  shareMeal();
+  let json = bridgeCalls('shareMeal')[0][2];
+  deleteMeal(1);
+  receiveSharedText(json);
+  assert(modal().textContent.includes('SHARED WITH PROMPT TO PAN') && modal().textContent.includes('Import Sunday Italian supper?'), modal().textContent);
+  confirmImport('update');
+  eq([meals[0].name, meals[0].recipes.length, meals[0].shopping.length, page], ['Sunday Italian supper', 3, 14, 'meal']);
+});
+
+test('receiving a meal you already have offers Update or Save as new', () => {
+  openMeal(1);
+  shareMeal();
+  receiveSharedText(bridgeCalls('shareMeal')[0][2]);
+  assert(modal().textContent.includes('Update Sunday Italian supper?'), 'matched by name');
+  confirmImport('copy');
+  eq(meals.filter(m => m.name === 'Sunday Italian supper').length, 2);
+});
+
 // ---- Deleting ----
 
 test('deleting a meal asks first, then removes it and is saved', () => {
@@ -431,7 +467,6 @@ test('restoring a recipe export offers to add its meals; junk is rejected', () =
 
 // ---- AI handoff ----
 
-const bridgeCalls = name => bridge.calls.filter(c => c[0] === name);
 
 test('the format the AI is given is one the importer accepts', () => {
   let parsed = parseMealkeeperJson(EXPORT_FORMAT);

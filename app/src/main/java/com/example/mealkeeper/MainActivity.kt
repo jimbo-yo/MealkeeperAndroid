@@ -6,12 +6,14 @@ import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -27,6 +29,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import org.json.JSONObject
+import java.io.File
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
@@ -190,14 +193,30 @@ class MainActivity : Activity() {
         handleIncomingIntent(intent)
     }
 
+    // Shared text, or a meal file shared to the app or opened from another app (see shareMeal). Either way the page
+    // gets the text and offers to import it.
     private fun handleIncomingIntent(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
-            if (!sharedText.isNullOrBlank()) {
-                runJs("if(window.receiveSharedText){window.receiveSharedText(${JSONObject.quote(sharedText)});}")
+        intent ?: return
+        val file: Uri? = when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_STREAM)
             }
+            else -> null
+        }
+        val text = file?.let { readSharedFile(it) }
+            ?: if (intent.action == Intent.ACTION_SEND) intent.getStringExtra(Intent.EXTRA_TEXT) else null
+        if (!text.isNullOrBlank()) {
+            runJs("if(window.receiveSharedText){window.receiveSharedText(${JSONObject.quote(text)});}")
         }
     }
+
+    private fun readSharedFile(uri: Uri): String? = runCatching {
+        contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+    }.getOrNull()?.takeIf { it.length <= MAX_CLIP_CHARS }
 
     // Draw behind transparent status and navigation bars on every version (Android 15 forces this anyway);
     // the page pads itself using the insets from applySafeInsets().
@@ -276,6 +295,31 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun copyText(text: String) {
             runOnUiThread { copyToClipboard(text) }
+        }
+
+        // Sends a meal to another person: a file Prompt to Pan can import, plus a readable version (EXTRA_TEXT) for
+        // anyone without the app. The file is served by SharedMealProvider.
+        @JavascriptInterface
+        fun shareMeal(fileName: String, json: String, text: String, title: String) {
+            runOnUiThread {
+                val dir = SharedMealProvider.sharedDir(this@MainActivity)
+                // Keep recent files a while (an email draft may attach it later), but don't let them pile up.
+                dir.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > SHARED_FILE_MAX_AGE_MS }?.forEach { it.delete() }
+                val file = File(dir, fileName.replace(Regex("[^A-Za-z0-9 ._()&'-]"), "_").take(100))
+                file.writeText(json)
+                val uri = SharedMealProvider.uriFor(this@MainActivity, file)
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_TEXT, text)
+                    putExtra(Intent.EXTRA_SUBJECT, title)
+                    clipData = ClipData.newRawUri(title, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                val chooser = Intent.createChooser(send, "Share $title")
+                    .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(this@MainActivity, MainActivity::class.java)))
+                startOther(chooser)
+            }
         }
 
         @JavascriptInterface
@@ -409,6 +453,7 @@ class MainActivity : Activity() {
         private const val REQUEST_RESTORE_BACKUP = 42
         private const val PREF_CLIPBOARD_WATCH = "clipboardWatch"
         private const val PREF_APPEARANCE = "appearance"
+        private const val SHARED_FILE_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
         private const val PREF_LAST_CLIP = "lastClipTimestamp"
         private const val MAX_CLIP_CHARS = 500_000
         // The page refers to the AI apps by these keys; the packages are also listed under <queries> in the manifest.
