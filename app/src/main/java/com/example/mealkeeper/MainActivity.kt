@@ -11,7 +11,6 @@ import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
 import android.graphics.Color
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -71,7 +70,7 @@ class MainActivity : Activity() {
                     val url = request.url
                     if (url.scheme == "file" && url.path.orEmpty().startsWith("/android_asset/")) return false
                     try {
-                        startActivity(Intent(Intent.ACTION_VIEW, url))
+                        startActivity(Intent(Intent.ACTION_VIEW, url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     } catch (e: ActivityNotFoundException) {
                         e.printStackTrace()
                     }
@@ -274,20 +273,30 @@ class MainActivity : Activity() {
             }
         }
 
+        // Hands text to the ChatGPT or Claude app as a share, which opens a new chat in the app with the text in
+        // the message box. Web links would open the browser (the ChatGPT app doesn't claim chatgpt.com links).
+        // Returns "shared", "opened" (the app was launched without the text), or "missing" (not installed).
         @JavascriptInterface
-        fun openInChatGPT(prompt: String) {
-            runOnUiThread {
-                try {
-                    val encoded = Uri.encode(prompt)
-                    val url = "https://chatgpt.com/?q=$encoded"
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    shareText(prompt, "Send prompt to AI assistant")
-                }
-            }
+        fun sendToAiApp(ai: String, text: String): String {
+            val pkg = AI_APPS[ai] ?: return "missing"
+            // NEW_TASK: otherwise the AI app's screen joins Mealkeeper's task, and returning to Mealkeeper shows it again.
+            val share = Intent(Intent.ACTION_SEND).setPackage(pkg).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (share.resolveActivity(packageManager) != null && start(share)) return "shared"
+            return if (openAiApp(ai)) "opened" else "missing"
+        }
+
+        @JavascriptInterface
+        fun openAiApp(ai: String): Boolean {
+            val launch = AI_APPS[ai]?.let { packageManager.getLaunchIntentForPackage(it) } ?: return false
+            return start(launch)
+        }
+
+        private fun start(intent: Intent): Boolean = try {
+            startActivity(intent)
+            true
+        } catch (e: ActivityNotFoundException) {
+            false
         }
 
         @JavascriptInterface
@@ -295,6 +304,7 @@ class MainActivity : Activity() {
             runOnUiThread {
                 try {
                     val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         putExtra(Intent.EXTRA_TEXT, text)
                         type = "text/plain"
                     }
@@ -333,5 +343,7 @@ class MainActivity : Activity() {
         private const val PREF_CLIPBOARD_WATCH = "clipboardWatch"
         private const val PREF_LAST_CLIP = "lastClipTimestamp"
         private const val MAX_CLIP_CHARS = 500_000
+        // The page refers to the AI apps by these keys; the packages are also listed under <queries> in the manifest.
+        private val AI_APPS = mapOf("chatgpt" to "com.openai.chatgpt", "claude" to "com.anthropic.claude")
     }
 }

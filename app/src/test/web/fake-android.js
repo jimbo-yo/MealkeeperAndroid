@@ -13,8 +13,15 @@ window.MealkeeperAndroid = {
   shareText(text, title) {
     this.calls.push(['shareText', text, title]);
   },
-  openInChatGPT(prompt) {
-    this.calls.push(['openInChatGPT', prompt]);
+  // What sendToAiApp reports: 'shared', 'opened' or 'missing' (tests set this).
+  aiAppResult: 'shared',
+  sendToAiApp(ai, text) {
+    this.calls.push(['sendToAiApp', ai, text]);
+    return this.aiAppResult;
+  },
+  openAiApp(ai) {
+    this.calls.push(['openAiApp', ai]);
+    return this.aiAppResult !== 'missing';
   },
   copyText(text) {
     this.calls.push(['copyText', text]);

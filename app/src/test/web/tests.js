@@ -11,6 +11,10 @@ const lastAwakeCall = () => awakeCalls().pop();
 const times = () => [...main().querySelectorAll('.time')].map(e => e.textContent);
 const hasMarkup = el => el.querySelector('b, i, u, img, script');
 
+// Stand-in for openUrl, which on Android would navigate the test page away.
+let opened = [];
+openUrl = url => opened.push(url);
+
 function reset() {
   localStorage.clear();
   closeModal();
@@ -27,8 +31,10 @@ function reset() {
   importText = '';
   pendingRestore = null;
   pendingImport = null;
+  pendingAsk = null;
   aiTab = 'chatgpt';
   clipOffer = true;
+  bridge.aiAppResult = 'shared';
   render();
   bridge.calls.length = 0;
 }
@@ -298,8 +304,10 @@ test('restored backups are cleaned like imports', () => {
   assert(!hasMarkup(main()), 'rendered markup');
 });
 
-test('restoring a recipe export adds its meals; junk is rejected', () => {
+test('restoring a recipe export offers to add its meals; junk is rejected', () => {
   receiveBackupFile(sampleExport);
+  assert(modal().textContent.includes('FROM A FILE'), 'no offer');
+  confirmImport('update');
   eq(meals.length, 5);
   receiveBackupFile('hello');
   eq(meals.length, 5);
@@ -317,6 +325,15 @@ test('the format the AI is given is one the importer accepts', () => {
   eq(m.shopping[0].usedIn, ['…'], 'used_in ids resolve to recipe titles');
   for (let text of [AI_SETUP_INSTRUCTIONS, ONE_OFF_PROMPT]) assert(text.includes(EXPORT_FORMAT), 'format missing');
   assert(AI_SETUP_INSTRUCTIONS.includes('"send it to Mealkeeper"'), 'trigger phrase missing');
+});
+
+test('"Open ChatGPT" opens the app, or the website without it', () => {
+  opened = [];
+  openAi('chatgpt');
+  eq([bridgeCalls('openAiApp').length, opened.length], [1, 0]);
+  bridge.aiAppResult = 'missing';
+  openAi('claude');
+  eq(opened, ['https://claude.ai/']);
 });
 
 test('AI screen has setup steps for ChatGPT and Claude', () => {
@@ -371,6 +388,151 @@ test('a shared meal is offered; other shared text opens the import dialog', () =
   receiveSharedText('Grandma\'s lasagna: lots of cheese');
   assert(document.getElementById('import-area'), 'import dialog not open');
   eq(document.getElementById('import-area').value, 'Grandma\'s lasagna: lots of cheese');
+});
+
+test('setup instructions fit in ChatGPT\'s 1,500-character custom instructions', () => {
+  assert(AI_SETUP_INSTRUCTIONS.length <= 1500, AI_SETUP_INSTRUCTIONS.length + ' characters');
+});
+
+// ---- Round trips and asking the AI ----
+
+// The last prompt handed to an AI app, or copied when there was no app to hand it to.
+const lastPrompt = () => {
+  let c = bridge.calls.filter(c => c[0] === 'sendToAiApp' || c[0] === 'copyText').pop();
+  return c[0] === 'sendToAiApp' ? c[2] : c[1];
+};
+
+test('a meal survives export to the AI format and back', () => {
+  let m = meals[0], back = fromV1Meal(toV1Meal(m), 0);
+  eq(back.recipes.map(r => [r.id, r.title, r.time, r.ingredients.length, r.instructions.length]),
+    m.recipes.map(r => [r.id, r.title, r.time, r.ingredients.length, r.instructions.length]));
+  eq(back.shopping.map(x => [x.name, x.qty, x.group, x.usedIn]), m.shopping.map(x => [x.name, x.qty, x.group, x.usedIn]));
+  eq(back.timeline, m.timeline);
+  eq([back.name, back.desc, back.time, back.servings], [m.name, m.desc, m.time, m.servings]);
+});
+
+// What an AI might send back after "make it vegetarian": same id, sausage swapped for mushrooms.
+function revisedSupper(changes = {}) {
+  let v1 = toV1Meal(meals[0]);
+  v1.recipes[1].title = 'Mushroom & pepper rigatoni';
+  v1.recipes[1].ingredients[0] = {name: 'Cremini mushrooms', quantity: 1, unit: 'lb', notes: 'sliced'};
+  v1.shopping_list = v1.shopping_list.filter(x => x.name !== 'Italian sausage links');
+  v1.shopping_list.unshift({name: 'Cremini mushrooms', quantity: 1, unit: 'lb', category: 'Produce', used_in: ['rigatoni']});
+  return '```json\n' + JSON.stringify({format: 'mealkeeper-v1', meals: [Object.assign(v1, changes)]}) + '\n```';
+}
+
+test('a revised meal from the AI updates the original', () => {
+  let m = meals[0];
+  m.serveAt = '19:15';
+  m.shopping.find(x => x.name === 'Parmesan').checked = true;
+  m.shopping.find(x => x.name === 'Italian sausage links').checked = true;
+  receiveClipboardText(revisedSupper());
+  assert(modal().textContent.includes('Update Sunday Italian supper?'), modal().textContent);
+  assert(modal().textContent.includes('items you checked off stay checked'), 'explanation missing');
+  confirmImport('update');
+  eq([meals.length, meals[0] === m, page, selectedMeal], [4, true, 'meal', 1]);
+  eq(m.recipes[1].title, 'Mushroom & pepper rigatoni');
+  eq([m.serveAt, m.shopping.length], ['19:15', 14]);
+  eq(m.shopping.filter(x => x.checked).map(x => x.name), ['Parmesan'], 'checks kept only for items still listed');
+  eq(m.shopping[0].usedIn, ['Mushroom & pepper rigatoni']);
+});
+
+test('"Save as new" keeps the original and adds the revision', () => {
+  receiveClipboardText(revisedSupper());
+  confirmImport('copy');
+  eq([meals.length, meals[0].recipes[1].title, meals[4].recipes[1].title], [5, 'Sausage & pepper rigatoni', 'Mushroom & pepper rigatoni']);
+});
+
+test('a revision without its id is matched by name', () => {
+  receiveClipboardText(revisedSupper({mealkeeper_id: null}));
+  assert(modal().textContent.includes('Update Sunday Italian supper?'));
+  confirmImport('update');
+  eq(meals.length, 4);
+});
+
+test('pasting a revision asks before updating; a new meal imports straight away', () => {
+  importViaDialog(revisedSupper());
+  assert(modal().textContent.includes('PASTED'), 'no update offer');
+  closeModal();
+  importViaDialog(sampleExport);
+  eq([meals.length, modalOpen()], [5, false]);
+});
+
+test('Revise with AI sends the whole meal and the request', () => {
+  opened = [];
+  openMeal(1);
+  reviseMeal();
+  assert(modal().textContent.includes('Change “Sunday Italian supper”'), 'dialog');
+  assert(modal().textContent.includes('Serve 6 instead of 3'), 'servings chip');
+  document.getElementById('ai-request').value = 'Make it vegetarian';
+  sendToAi('claude');
+  let prompt = lastPrompt();
+  assert(prompt.startsWith("Here's a meal from my Mealkeeper app. Make it vegetarian"), prompt.slice(0, 80));
+  assert(prompt.includes('"mealkeeper_id":"1"'), 'id missing');
+  eq(fromV1Meal(parseMealkeeperJson(prompt).meals[0], 0).recipes.length, 3, 'meal JSON in the prompt imports');
+  eq(modalOpen(), false);
+  eq(aiTab, 'claude', 'remembers the AI');
+  eq(JSON.parse(localStorage.getItem(STORE_KEY)).aiTab, 'claude');
+});
+
+test('prompts go straight to the AI app when it\'s installed', () => {
+  opened = [];
+  openMeal(1);
+  reviseMeal();
+  sendToAi('chatgpt');
+  let call = bridgeCalls('sendToAiApp')[0];
+  eq([call[1], call[2] === lastPrompt(), bridgeCalls('copyText').length, opened.length], ['chatgpt', true, 0, 0]);
+  sendPrompt('claude', ONE_OFF_PROMPT);
+  eq(bridgeCalls('sendToAiApp')[1].slice(1), ['claude', ONE_OFF_PROMPT]);
+});
+
+test('if the app only opens, the prompt is copied to paste', () => {
+  bridge.aiAppResult = 'opened';
+  opened = [];
+  sendPrompt('claude', ONE_OFF_PROMPT);
+  eq([bridgeCalls('copyText').map(c => c[1]), opened.length], [[ONE_OFF_PROMPT], 0]);
+});
+
+test('without the app, the prompt goes in a web link when it fits; otherwise a plain new chat opens', () => {
+  bridge.aiAppResult = 'missing';
+  opened = [];
+  openMeal(1);
+  askAbout('recipe', 0);
+  sendToAi('chatgpt');
+  assert(opened[0].startsWith('https://chatgpt.com/?q='), opened[0]);
+  eq(decodeURIComponent(opened[0].slice('https://chatgpt.com/?q='.length)), lastPrompt());
+  reviseMeal();
+  sendToAi('claude');
+  eq(opened[1], 'https://claude.ai/', 'the whole meal is too long for a link');
+  assert(lastPrompt().includes('mealkeeper_id'), 'still copied');
+});
+
+test('Ask AI about a recipe includes it as readable text', () => {
+  openMeal(1);
+  showRecipe(1);
+  modal().querySelector('[onclick^="askAbout"]').click();
+  assert(modal().textContent.includes('Ask about “Sausage & pepper rigatoni”'), modal().textContent);
+  document.getElementById('ai-request').value = 'What can I use instead of heavy cream?';
+  sendToAi('chatgpt');
+  let prompt = lastPrompt();
+  assert(prompt.includes('What can I use instead of heavy cream?'), 'question');
+  assert(prompt.includes('Sausage & pepper rigatoni (Main), serves 3'), 'title line');
+  assert(prompt.includes('- ½ cup Heavy cream'), 'ingredient line');
+  assert(prompt.includes('3. Stir in the cream'), 'numbered step');
+  assert(modal().textContent.includes('Ingredients'), 'recipe reopens for when you come back');
+  eq(lastAwakeCall(), true, 'screen stays on');
+});
+
+test('Ask AI about a timeline step includes the step and its recipe', () => {
+  go('timeline');
+  let buttons = main().querySelectorAll('[onclick^="askAbout(\'step\'"]');
+  eq(buttons.length, 6);
+  buttons[3].click();
+  document.getElementById('ai-request').value = 'How do I know it\'s done?';
+  sendToAi('chatgpt');
+  let prompt = lastPrompt();
+  assert(prompt.includes('"Boil pasta"'), 'step');
+  assert(prompt.includes('Sausage & pepper rigatoni (Main)'), 'recipe');
 });
 
 test('the copied-meal setting is saved and sent to Android', () => {

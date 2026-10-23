@@ -17,7 +17,8 @@ let navStack = [],
   aiTab = 'chatgpt',
   clipOffer = true,
   lastClipOffer = null,
-  pendingImport = null;
+  pendingImport = null,
+  pendingAsk = null;
 
 const STORE_KEY = 'mealkeeper.state.v1',
   BACKUP_FORMAT = 'mealkeeper-backup-v1';
@@ -279,6 +280,58 @@ function buildShoppingList(recipes) {
 }
 
 // AI replies often wrap JSON in ``` fences or add a sentence around it; pull out the outermost {...} block.
+// The inverse of fromV1Meal, used to hand a meal back to an AI to revise. mealkeeper_id lets the reply update it.
+function toV1Meal(m) {
+  let idOf = title => (m.recipes.find(r => r.title === title) || {}).id || title;
+  return {
+    mealkeeper_id: String(m.id),
+    name: m.name,
+    description: m.desc,
+    servings: m.servings,
+    total_time: m.time,
+    recipes: m.recipes.map(r => ({
+      id: r.id,
+      title: r.title,
+      course: r.course,
+      servings: r.servings,
+      prep_time_minutes: r.prep,
+      cook_time_minutes: r.cook,
+      total_time: r.time,
+      ingredients: r.ingredients.map(x => ({name: x.name, quantity: x.quantity, unit: x.unit || null, notes: x.notes || null})),
+      instructions: r.instructions,
+      make_ahead_notes: r.makeAhead || null,
+      source: r.source || null
+    })),
+    shopping_list: m.shopping.map(x => ({name: x.name, quantity: x.qty, unit: null, category: x.group, used_in: x.usedIn.map(idOf)})),
+    timeline: m.timeline.map(t => ({
+      start_offset_minutes: t.offset,
+      duration_minutes: t.duration,
+      task: t.task,
+      recipe_id: t.recipeId || null,
+      instructions: t.details || null
+    }))
+  };
+}
+
+// The meal an incoming export would update: same mealkeeper_id, or failing that the same name.
+function existingMealFor(v1) {
+  v1 = obj(v1);
+  let id = num(v1.mealkeeper_id), name = str(v1.name).trim().toLowerCase();
+  return (id !== null && meals.find(m => m.id === id)) || (name && meals.find(m => m.name.trim().toLowerCase() === name)) || null;
+}
+
+// Takes an AI's new version of a meal, keeping the serving time and check marks on items still on the list.
+function updateMeal(target, fresh, v1) {
+  let checked = new Set(target.shopping.filter(x => x.checked).map(x => x.name.trim().toLowerCase()));
+  target.name = fresh.name;
+  if (str(v1.description)) target.desc = fresh.desc;
+  if (str(v1.total_time) || fresh.timeline.length) target.time = fresh.time;
+  if (num(v1.servings)) target.servings = fresh.servings;
+  target.recipes = fresh.recipes;
+  target.timeline = fresh.timeline;
+  target.shopping = fresh.shopping.map(x => ({...x, checked: checked.has(x.name.trim().toLowerCase())}));
+}
+
 function parseMealkeeperJson(text) {
   let t = text.replace(/```(?:json)?/gi, '').trim(),
     a = t.indexOf('{'),
@@ -307,7 +360,7 @@ const sampleExport = JSON.stringify(SAMPLE_EXPORT, null, 2);
 const EXPORT_FORMAT = `Reply with ONLY one JSON code block, no other text, in this format:
 
 {"format": "mealkeeper-v1", "meals": [{
-  "name": "…", "description": "…", "servings": 4, "total_time": "1 hr 15 min",
+  "mealkeeper_id": null, "name": "…", "description": "…", "servings": 4, "total_time": "1 hr 15 min",
   "recipes": [{
     "id": "short-id", "title": "…", "course": "Main", "servings": 4,
     "prep_time_minutes": 15, "cook_time_minutes": 40, "total_time_minutes": 55,
@@ -320,10 +373,11 @@ const EXPORT_FORMAT = `Reply with ONLY one JSON code block, no other text, in th
 }]}
 
 Rules:
-- One recipe per dish, each with all of its ingredients and steps.
-- Quantities are numbers (1.5, not "1 1/2"). Use null when you don't know something rather than guessing.
-- Combine duplicate shopping items, put the store section in "category", and list the ids of the recipes that use each one.
-- start_offset_minutes counts from when cooking starts. Order the timeline so every dish is ready at serving time, including preheating and resting.`;
+- One recipe per dish, with all of its ingredients and steps.
+- Quantities are numbers (1.5, not "1 1/2"); use null if unknown, don't guess.
+- Merge duplicate shopping items; "category" is the store section; "used_in" lists recipe ids.
+- start_offset_minutes counts from when cooking starts. Order the timeline so every dish is ready at serving time, including preheating and resting.
+- If the meal came from Mealkeeper with a mealkeeper_id, keep it unchanged.`;
 
 // Standing instructions for a ChatGPT or Claude project, so the user can just say "send it to Mealkeeper".
 const AI_SETUP_INSTRUCTIONS = `I cook the meals I plan with you using an app called Mealkeeper. Brainstorm and refine meals with me as usual. When I say "send it to Mealkeeper", turn the meal we've settled on into the Mealkeeper format.
@@ -339,6 +393,7 @@ const AI_GUIDES = {
   chatgpt: {
     name: 'ChatGPT',
     url: 'https://chatgpt.com/',
+    newChat: 'https://chatgpt.com/?q=',
     steps: [
       'Tap <strong>Copy instructions</strong> below.',
       'In ChatGPT, create a project (for example “Meal planning”) from <strong>Projects</strong> in the sidebar.',
@@ -349,6 +404,7 @@ const AI_GUIDES = {
   claude: {
     name: 'Claude',
     url: 'https://claude.ai/',
+    newChat: 'https://claude.ai/new?q=',
     steps: [
       'Tap <strong>Copy instructions</strong> below.',
       'In Claude, create a project (for example “Meal planning”) from <strong>Projects</strong> in the sidebar.',
@@ -367,7 +423,8 @@ function saveState() {
       selectedMeal,
       awake,
       cookAwake,
-      clipOffer
+      clipOffer,
+      aiTab
     }))
   } catch (e) {}
 }
@@ -393,6 +450,7 @@ function applyState(s) {
   awake = !!s.awake;
   cookAwake = s.cookAwake !== false;
   clipOffer = s.clipOffer !== false;
+  if (s.aiTab in AI_GUIDES) aiTab = s.aiTab;
 }
 
 function exportBackup() {
@@ -446,7 +504,7 @@ window.receiveBackupFile = function(text) {
     let when = Date.parse(o.exported_at);
     openModal(`<h2>Restore this backup?</h2><p class="subhead">Your current ${meals.length} meal collection(s) and shopping checklist will be replaced with the ${o.meals.length} meal collection(s) in this backup${when?' from '+escapeHtml(new Date(when).toLocaleString()):''}.</p><div class="modal-foot"><button class="outline" onclick="pendingRestore=null;closeModal()">Cancel</button><button class="primary" onclick="confirmRestore()">Replace my data</button></div>`)
   } else if (o && o.meals && o.meals.length) {
-    importMeals(o)
+    offerImport(text, 'FROM A FILE')
   } else {
     notify('That file isn\'t a Mealkeeper backup or recipe export.')
   }
@@ -580,7 +638,7 @@ function mealsPage() {
 function mealPage() {
   let m = currentMeal();
   if (!m) return mealsPage();
-  return `<button class="text-btn" onclick="go('meals')">← All meal collections</button><div style="height:15px"></div><div class="eyebrow">MEAL COLLECTION</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">${escapeHtml(m.name)}</h1><p class="subhead">${escapeHtml(m.desc)}</p><div class="row muted small">◷ ${escapeHtml(m.time)} &nbsp;·&nbsp; ${m.recipes.length} recipes &nbsp;·&nbsp; Serves ${escapeHtml(m.servings)}</div></div><button class="outline" onclick="openImport()">＋ Import recipes</button></div><div class="tabs"><button class="tab ${mealTab==='recipes'?'active':''}" onclick="mealTab='recipes';render()">Recipes (${m.recipes.length})</button><button class="tab ${mealTab==='shopping'?'active':''}" onclick="mealTab='shopping';render()">Shopping list</button><button class="tab ${mealTab==='timeline'?'active':''}" onclick="mealTab='timeline';render()">Cooking timeline</button></div>${mealTab==='recipes'?`<div class="section-head" style="margin-top:12px"><h2>Courses & recipes</h2><button class="text-btn" onclick="go('ai')">✧ Plan with AI</button></div><div class="recipe-list">${m.recipes.length?m.recipes.map((r,i)=>`<div class="recipe-row" onclick="showRecipe(${i})"><div class="recipe-icon">${escapeHtml(r.icon)}</div><div><h3>${escapeHtml(r.title)}</h3><p>${escapeHtml([r.course,r.time].filter(Boolean).join(' · '))}</p></div><span class="arrow">›</span></div>`).join(''):`<div class="panel empty"><div style="font-size:34px;margin-bottom:12px">🥘</div><strong>No recipes yet</strong><p class="small">Import a recipe bundle from your AI, and all the courses will appear here.</p><button class="primary" onclick="openImport()">Import recipes</button></div>`}</div>`:mealTab==='shopping'?shoppingPage(true):timelinePage(true)}<div class="actions" style="margin-top:20px"><button class="secondary" onclick="go('shopping')">☷ Open full shopping list</button><button class="secondary" onclick="go('timeline')">◷ Plan cooking order</button></div>`
+  return `<button class="text-btn" onclick="go('meals')">← All meal collections</button><div style="height:15px"></div><div class="eyebrow">MEAL COLLECTION</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">${escapeHtml(m.name)}</h1><p class="subhead">${escapeHtml(m.desc)}</p><div class="row muted small">◷ ${escapeHtml(m.time)} &nbsp;·&nbsp; ${m.recipes.length} recipes &nbsp;·&nbsp; Serves ${escapeHtml(m.servings)}</div></div><div class="actions"><button class="secondary" onclick="reviseMeal()">✧ Revise with AI</button><button class="outline" onclick="openImport()">＋ Import</button></div></div><div class="tabs"><button class="tab ${mealTab==='recipes'?'active':''}" onclick="mealTab='recipes';render()">Recipes (${m.recipes.length})</button><button class="tab ${mealTab==='shopping'?'active':''}" onclick="mealTab='shopping';render()">Shopping list</button><button class="tab ${mealTab==='timeline'?'active':''}" onclick="mealTab='timeline';render()">Cooking timeline</button></div>${mealTab==='recipes'?`<div class="section-head" style="margin-top:12px"><h2>Courses & recipes</h2><button class="text-btn" onclick="go('ai')">✧ Plan with AI</button></div><div class="recipe-list">${m.recipes.length?m.recipes.map((r,i)=>`<div class="recipe-row" onclick="showRecipe(${i})"><div class="recipe-icon">${escapeHtml(r.icon)}</div><div><h3>${escapeHtml(r.title)}</h3><p>${escapeHtml([r.course,r.time].filter(Boolean).join(' · '))}</p></div><span class="arrow">›</span></div>`).join(''):`<div class="panel empty"><div style="font-size:34px;margin-bottom:12px">🥘</div><strong>No recipes yet</strong><p class="small">Import a recipe bundle from your AI, and all the courses will appear here.</p><button class="primary" onclick="openImport()">Import recipes</button></div>`}</div>`:mealTab==='shopping'?shoppingPage(true):timelinePage(true)}<div class="actions" style="margin-top:20px"><button class="secondary" onclick="go('shopping')">☷ Open full shopping list</button><button class="secondary" onclick="go('timeline')">◷ Plan cooking order</button></div>`
 }
 
 function showRecipe(i) {
@@ -595,7 +653,7 @@ function showRecipe(i) {
     ['Total', r.time],
     ['Serves', str(r.servings || '')]
   ].filter(f => f[1]);
-  openModal(`<div class="eyebrow">${escapeHtml(m.name)}</div><h2>${escapeHtml(r.icon)} ${escapeHtml(r.title)}</h2>${r.course?`<p class="subhead" style="margin-bottom:10px">${escapeHtml(r.course)}</p>`:''}${facts.length?`<div class="muted small" style="margin-bottom:14px">${facts.map(f=>`${f[0]}: <strong>${escapeHtml(f[1])}</strong>`).join(' &nbsp;·&nbsp; ')}</div>`:''}${r.ingredients.length?`<div class="panel"><strong>Ingredients</strong>${r.ingredients.map(x=>`<div class="checkrow"><span>${escapeHtml(x.name)}${x.notes?` <span class="muted small">(${escapeHtml(x.notes)})</span>`:''}</span><span class="qty">${escapeHtml(fmtQty(x.quantity,x.unit))}</span></div>`).join('')}</div>`:''}${r.instructions.length?`<div class="panel"><strong>Instructions</strong><ol style="padding-left:20px;margin:10px 0 0;line-height:1.6;font-size:14px">${r.instructions.map(s=>`<li style="margin-bottom:8px">${escapeHtml(s)}</li>`).join('')}</ol></div>`:''}${r.ingredients.length||r.instructions.length?'':`<div class="panel"><p class="muted small" style="line-height:1.6;margin:0">No ingredients or steps are saved for this recipe. Send the meal from ChatGPT or Claude to get the full recipe.</p></div>`}${r.makeAhead?`<div class="panel"><strong>Make ahead</strong><p class="muted small" style="line-height:1.6;margin-bottom:0">${escapeHtml(r.makeAhead)}</p></div>`:''}${r.source?`<p class="muted small">Source: ${escapeHtml(r.source)}</p>`:''}<div class="modal-foot"><button class="secondary" onclick="closeModal();go('shopping')">Shopping list</button><button class="primary" onclick="closeModal()">Done</button></div>`)
+  openModal(`<div class="eyebrow">${escapeHtml(m.name)}</div><h2>${escapeHtml(r.icon)} ${escapeHtml(r.title)}</h2>${r.course?`<p class="subhead" style="margin-bottom:10px">${escapeHtml(r.course)}</p>`:''}${facts.length?`<div class="muted small" style="margin-bottom:14px">${facts.map(f=>`${f[0]}: <strong>${escapeHtml(f[1])}</strong>`).join(' &nbsp;·&nbsp; ')}</div>`:''}${r.ingredients.length?`<div class="panel"><strong>Ingredients</strong>${r.ingredients.map(x=>`<div class="checkrow"><span>${escapeHtml(x.name)}${x.notes?` <span class="muted small">(${escapeHtml(x.notes)})</span>`:''}</span><span class="qty">${escapeHtml(fmtQty(x.quantity,x.unit))}</span></div>`).join('')}</div>`:''}${r.instructions.length?`<div class="panel"><strong>Instructions</strong><ol style="padding-left:20px;margin:10px 0 0;line-height:1.6;font-size:14px">${r.instructions.map(s=>`<li style="margin-bottom:8px">${escapeHtml(s)}</li>`).join('')}</ol></div>`:''}${r.ingredients.length||r.instructions.length?'':`<div class="panel"><p class="muted small" style="line-height:1.6;margin:0">No ingredients or steps are saved for this recipe. Send the meal from ChatGPT or Claude to get the full recipe.</p></div>`}${r.makeAhead?`<div class="panel"><strong>Make ahead</strong><p class="muted small" style="line-height:1.6;margin-bottom:0">${escapeHtml(r.makeAhead)}</p></div>`:''}${r.source?`<p class="muted small">Source: ${escapeHtml(r.source)}</p>`:''}<div class="modal-foot"><button class="secondary" onclick="askAbout('recipe',${i})">✧ Ask AI</button><button class="secondary" onclick="closeModal();go('shopping')">Shopping list</button><button class="primary" onclick="closeModal()">Done</button></div>`)
 }
 
 function shoppingPage(embedded = false) {
@@ -617,7 +675,7 @@ function timelinePage(embedded = false) {
     serve = clockMinutes(m.serveAt),
     start = serve - span,
     titleOf = id => (m.recipes.find(r => r.id === id) || {}).title;
-  return `${head}<div class="panel"><div class="spread"><div><strong>${escapeHtml(m.name)}</strong><div class="muted small" style="margin-top:4px">Start at ${fmtClock(start)} · serve at ${fmtClock(serve)} · ${fmtMinutes(span)} total</div></div><span class="badge">${m.recipes.length} recipes</span></div><label class="field-label">Target serving time</label><input class="field" type="time" value="${escapeHtml(m.serveAt)}" onchange="setServeAt(this.value)"></div><div class="panel"><div class="timeline">${m.timeline.map(t=>`<div class="time">${fmtClock(start+t.offset)}</div><div class="timeitem"><strong>${escapeHtml(t.task)}</strong>${t.duration?` <span class="muted small">· ${fmtMinutes(t.duration)}</span>`:''}${titleOf(t.recipeId)?`<div class="muted small" style="margin-top:3px">${escapeHtml(titleOf(t.recipeId))}</div>`:''}${t.details?`<p>${escapeHtml(t.details)}</p>`:''}</div>`).join('')}<div class="time">${fmtClock(serve)}</div><div class="timeitem"><strong>Serve</strong><p>Everything should be ready now.</p></div></div><div class="divider"></div><div class="spread"><span class="muted small">${awake||cookAwake?'Your screen stays on while this timeline is open.':'Your screen may sleep while you cook.'}</span><button class="secondary" onclick="go('settings')">Configure</button></div></div>`
+  return `${head}<div class="panel"><div class="spread"><div><strong>${escapeHtml(m.name)}</strong><div class="muted small" style="margin-top:4px">Start at ${fmtClock(start)} · serve at ${fmtClock(serve)} · ${fmtMinutes(span)} total</div></div><span class="badge">${m.recipes.length} recipes</span></div><label class="field-label">Target serving time</label><input class="field" type="time" value="${escapeHtml(m.serveAt)}" onchange="setServeAt(this.value)"></div><div class="panel"><div class="timeline">${m.timeline.map((t,i)=>`<div class="time">${fmtClock(start+t.offset)}</div><div class="timeitem"><strong>${escapeHtml(t.task)}</strong>${t.duration?` <span class="muted small">· ${fmtMinutes(t.duration)}</span>`:''}${titleOf(t.recipeId)?`<div class="muted small" style="margin-top:3px">${escapeHtml(titleOf(t.recipeId))}</div>`:''}${t.details?`<p>${escapeHtml(t.details)}</p>`:''}<button class="text-btn" style="font-size:12px;padding:6px 0 0" onclick="askAbout('step',${i})">✧ Ask AI about this step</button></div>`).join('')}<div class="time">${fmtClock(serve)}</div><div class="timeitem"><strong>Serve</strong><p>Everything should be ready now.</p></div></div><div class="divider"></div><div class="spread"><span class="muted small">${awake||cookAwake?'Your screen stays on while this timeline is open.':'Your screen may sleep while you cook.'}</span><button class="secondary" onclick="go('settings')">Configure</button></div></div>`
 }
 
 function aiPage() {
@@ -627,14 +685,14 @@ function aiPage() {
 <div class="panel">${step('1', 'Set up your AI once', 'Give it standing instructions, so you never have to paste a prompt into a chat.')}
 <div class="tabs" style="margin-top:4px">${Object.entries(AI_GUIDES).map(([k, g]) => `<button class="tab ${k === aiTab ? 'active' : ''}" onclick="aiTab='${k}';render()">${g.name}</button>`).join('')}</div>
 <ol style="padding-left:20px;margin:0 0 14px;line-height:1.6;font-size:14px">${guide.steps.map(x => `<li style="margin-bottom:6px">${x}</li>`).join('')}</ol>
-<div class="actions"><button class="primary" onclick="copySetup()">▣ Copy instructions</button><button class="secondary" onclick="openUrl(AI_GUIDES[aiTab].url)">Open ${guide.name} ↗</button></div>
+<div class="actions"><button class="primary" onclick="copySetup()">▣ Copy instructions</button><button class="secondary" onclick="openAi(aiTab)">Open ${guide.name} ↗</button></div>
 <details style="margin-top:14px"><summary class="muted small">Show the instructions</summary><textarea class="field" rows="12" readonly style="margin-top:10px">${escapeHtml(AI_SETUP_INSTRUCTIONS)}</textarea></details></div>
 <div class="panel">${step('2', 'Plan, then send it here', `When the meal is right, say “send it to Mealkeeper”. Tap <strong>Copy</strong> on the code block it replies with, then come back here. ${clipOffer ? 'Mealkeeper will offer to import it.' : 'Then tap Import and paste it. (Turn on “Offer to import copied meals” in Settings to skip this.)'}`)}
 ${step('↗', 'Or share it', 'Long-press the reply, tap <strong>Share</strong>, and pick Mealkeeper.')}
 <button class="secondary" onclick="openImport()">↥ Import manually</button></div>
 <div class="panel"><strong>Not set up yet?</strong><p class="muted small" style="line-height:1.5;margin:6px 0 12px">Paste this prompt at the end of any chat to send that meal over.</p>
 <div class="actions"><button class="secondary" onclick="copyPrompt()">▣ Copy prompt</button><button class="secondary" onclick="sharePrompt()">☍ Share prompt</button></div>
-<p class="muted small" style="margin:14px 0 8px">Or start a new chat with it:</p><div class="actions"><button class="outline" onclick="openChatGPT()">ChatGPT ↗</button><button class="outline" onclick="openInClaude()">Claude ↗</button></div></div>`
+<p class="muted small" style="margin:14px 0 8px">Or start a new chat with it:</p><div class="actions"><button class="outline" onclick="sendPrompt('chatgpt', ONE_OFF_PROMPT)">ChatGPT ↗</button><button class="outline" onclick="sendPrompt('claude', ONE_OFF_PROMPT)">Claude ↗</button></div></div>`
 }
 
 function settingsPage() {
@@ -692,22 +750,35 @@ function doImport() {
   importText = v;
   let parsed = parseMealkeeperJson(v);
   if (parsed && parsed.meals && parsed.meals.length) {
-    importMeals(parsed)
+    if (!parsed.meals.some(existingMealFor)) importMeals(parsed);
+    else offerImport(v, 'PASTED');
   } else {
     notify(parsed === null ? 'Couldn\'t find valid JSON in that text. Make sure you copied the whole AI response.' : 'That JSON has no meals in it. Check it follows the mealkeeper-v1 format.')
   }
 }
 
-function importMeals(parsed) {
-  let added = parsed.meals.map((m, i) => fromV1Meal(m, i)).filter(Boolean);
-  added.forEach(m => meals.push(m));
+// mode 'update' replaces meals that match an existing one (see existingMealFor); 'copy' always adds new meals.
+function importMeals(parsed, mode = 'update') {
+  let added = [], updated = [];
+  parsed.meals.forEach((v1, i) => {
+    let fresh = fromV1Meal(v1, i), target = mode === 'update' && existingMealFor(v1);
+    if (!fresh) return;
+    if (target) {
+      updateMeal(target, fresh, obj(v1));
+      updated.push(target);
+    } else {
+      meals.push(fresh);
+      added.push(fresh);
+    }
+  });
   closeModal();
-  if (added.length === 1) {
-    notify(`Imported “${added[0].name}”`);
-    openMeal(added[0].id);
+  let all = updated.concat(added);
+  if (all.length === 1) {
+    notify(`${updated.length ? 'Updated' : 'Imported'} “${all[0].name}”`);
+    openMeal(all[0].id);
   } else {
-    if (added.length) selectedMeal = added[added.length - 1].id;
-    notify(`Imported ${added.length} meal collection(s).`);
+    if (all.length) selectedMeal = all[all.length - 1].id;
+    notify([updated.length && `Updated ${updated.length}`, added.length && `imported ${added.length}`].filter(Boolean).join(', ') + ' meal collection(s).');
     go('meals');
   }
 }
@@ -719,17 +790,23 @@ function offerImport(text, source) {
   pendingImport = parsed;
   let n = parsed.meals.length,
     first = obj(parsed.meals[0]),
+    matches = parsed.meals.map(existingMealFor).filter(Boolean),
     title = n === 1 ? str(first.name) || 'this meal' : `${n} meals`,
-    detail = n === 1 ? [`${arr(first.recipes).length} recipes`, arr(first.shopping_list).length && `${arr(first.shopping_list).length} shopping items`, arr(first.timeline).length && 'cooking timeline'].filter(Boolean).join(' · ') : parsed.meals.map(m => str(obj(m).name) || 'Untitled meal').join(', ');
-  openModal(`<div class="eyebrow">${source}</div><h2>Import ${escapeHtml(title)}?</h2><p class="subhead">${escapeHtml(detail)}</p><div class="modal-foot"><button class="outline" onclick="pendingImport=null;closeModal()">Not now</button><button class="primary" onclick="confirmImport()">Import</button></div>`);
+    detail = n === 1 ? [`${arr(first.recipes).length} recipes`, arr(first.shopping_list).length && `${arr(first.shopping_list).length} shopping items`, arr(first.timeline).length && 'cooking timeline'].filter(Boolean).join(' · ') : parsed.meals.map(m => str(obj(m).name) || 'Untitled meal').join(', '),
+    notNow = `<button class="outline" onclick="pendingImport=null;closeModal()">Not now</button>`,
+    buttons = matches.length ?
+    `${notNow}<button class="secondary" onclick="confirmImport('copy')">Save as new</button><button class="primary" onclick="confirmImport('update')">Update</button>` :
+    `${notNow}<button class="primary" onclick="confirmImport('update')">Import</button>`;
+  if (matches.length) detail += n === 1 ? '. This replaces its recipes, shopping list and timeline; items you checked off stay checked.' : `. ${matches.length} of them will update meals you already have.`;
+  openModal(`<div class="eyebrow">${source}</div><h2>${matches.length && n === 1 ? 'Update' : 'Import'} ${escapeHtml(title)}?</h2><p class="subhead">${escapeHtml(detail)}</p><div class="modal-foot">${buttons}</div>`);
   return true;
 }
 
-function confirmImport() {
+function confirmImport(mode) {
   if (!pendingImport) return;
   let parsed = pendingImport;
   pendingImport = null;
-  importMeals(parsed);
+  importMeals(parsed, mode);
 }
 
 window.receiveSharedText = function(text) {
@@ -801,16 +878,10 @@ function openUrl(url) {
   else window.open(url, '_blank');
 }
 
-function openChatGPT() {
-  if (window.MealkeeperAndroid && window.MealkeeperAndroid.openInChatGPT) {
-    window.MealkeeperAndroid.openInChatGPT(ONE_OFF_PROMPT)
-  } else {
-    openUrl('https://chatgpt.com/?q=' + encodeURIComponent(ONE_OFF_PROMPT))
-  }
-}
-
-function openInClaude() {
-  openUrl('https://claude.ai/new?q=' + encodeURIComponent(ONE_OFF_PROMPT));
+// Opens the ChatGPT or Claude app (on Android), or its website.
+function openAi(ai) {
+  let android = window.MealkeeperAndroid;
+  if (!(android && android.openAiApp && android.openAiApp(ai))) openUrl(AI_GUIDES[ai].url);
 }
 
 function sharePrompt() {
@@ -823,6 +894,91 @@ function sharePrompt() {
   } else {
     copyPrompt()
   }
+}
+
+// A dialog for writing a request, then sending it with context to a new ChatGPT or Claude chat.
+// build(text) returns the full prompt; after(), if given, reopens what the user was looking at.
+function aiModal(eyebrow, title, intro, placeholder, chips, build, after) {
+  pendingAsk = {build, after};
+  let order = aiTab === 'claude' ? ['chatgpt', 'claude'] : ['claude', 'chatgpt'];
+  openModal(`<div class="eyebrow">${eyebrow}</div><h2>${escapeHtml(title)}</h2><p class="subhead" style="margin-bottom:12px">${intro}</p><textarea id="ai-request" class="field" rows="3" style="min-height:90px" placeholder="${escapeHtml(placeholder)}"></textarea><div class="actions" style="margin-top:10px">${chips.map(c => `<button class="outline" style="font-size:12px;padding:7px 12px" onclick="document.getElementById('ai-request').value=this.textContent">${escapeHtml(c)}</button>`).join('')}</div><div class="modal-foot">${order.map(k => `<button class="${k === aiTab ? 'primary' : 'secondary'}" onclick="sendToAi('${k}')">Ask ${AI_GUIDES[k].name} ↗</button>`).join('')}</div>`);
+}
+
+function sendToAi(ai) {
+  if (!pendingAsk) return;
+  let {build, after} = pendingAsk,
+    prompt = build(document.getElementById('ai-request').value.trim());
+  pendingAsk = null;
+  aiTab = ai;
+  closeModal();
+  if (after) after();
+  saveState();
+  sendPrompt(ai, prompt);
+}
+
+// Starts a new chat with the prompt. On Android it goes to the ChatGPT or Claude app as a share, landing in the
+// message box for the user to check and send. Without the app, a web chat opens with the prompt in the link
+// (copied too, since very long links can fail and then open a plain new chat).
+const MAX_PROMPT_URL = 6000;
+
+function sendPrompt(ai, prompt) {
+  let guide = AI_GUIDES[ai],
+    android = window.MealkeeperAndroid,
+    how = android && android.sendToAiApp ? android.sendToAiApp(ai, prompt) : 'missing';
+  if (how === 'shared') return notify(`Opening ${guide.name}. Check the message, then send it.`);
+  if (how === 'opened') return copyText(prompt, `Prompt copied. Paste it into a new ${guide.name} chat.`);
+  let url = guide.newChat + encodeURIComponent(prompt),
+    fits = url.length <= MAX_PROMPT_URL;
+  copyText(prompt, fits ? `Opening ${guide.name}. The prompt is copied too, in case you need to paste it.` : `Prompt copied. Paste it into the new ${guide.name} chat.`);
+  openUrl(fits ? url : guide.url);
+}
+
+function reviseMeal() {
+  let m = currentMeal();
+  if (!m) return;
+  let json = JSON.stringify({format: 'mealkeeper-v1', meals: [toV1Meal(m)]});
+  aiModal('REVISE WITH AI', `Change “${m.name}”`, 'Say what to change. Your AI gets the whole meal. When it replies with the new version, copy it and come back to update the meal here.',
+    'e.g. make it vegetarian', ['Make it vegetarian', `Serve ${m.servings * 2} instead of ${m.servings}`, 'Make it quicker for a weeknight', 'Add a dessert'],
+    request => `Here's a meal from my Mealkeeper app. ${request || 'I want to change it. Ask me what I have in mind.'}
+
+Talk it through with me if you need to. When the new version is ready (or when I say "send it to Mealkeeper"), reply with ONLY one JSON code block in the same format, keeping "mealkeeper_id" unchanged so Mealkeeper updates the meal instead of adding a copy. Update the shopping list and timeline to match.
+
+${json}`);
+}
+
+// Readable text of a recipe for a question: shorter than JSON and easier for the AI to talk about.
+function recipeText(r) {
+  return [
+    `${r.title}${r.course ? ` (${r.course})` : ''}${r.servings ? `, serves ${r.servings}` : ''}`,
+    r.ingredients.length ? 'Ingredients:\n' + r.ingredients.map(x => `- ${[fmtQty(x.quantity, x.unit), x.name].filter(Boolean).join(' ')}${x.notes ? `, ${x.notes}` : ''}`).join('\n') : '',
+    r.instructions.length ? 'Steps:\n' + r.instructions.map((s, i) => `${i + 1}. ${s}`).join('\n') : ''
+  ].filter(Boolean).join('\n\n');
+}
+
+// kind is 'recipe' (index into the meal's recipes) or 'step' (index into its timeline).
+function askAbout(kind, i) {
+  let m = currentMeal();
+  if (!m) return;
+  let title, context, after;
+  if (kind === 'recipe') {
+    let r = m.recipes[i];
+    if (!r) return;
+    title = r.title;
+    context = recipeText(r);
+    after = () => showRecipe(i);
+  } else {
+    let t = m.timeline[i], r = t && m.recipes.find(x => x.id === t.recipeId);
+    if (!t) return;
+    title = t.task;
+    context = `I'm at this step of my cooking timeline for ${m.name}: "${t.task}"${t.details ? ` (${t.details})` : ''}.${r ? `\n\n${recipeText(r)}` : ''}`;
+  }
+  aiModal('ASK YOUR AI', `Ask about “${title}”`, 'Your AI gets the recipe, so you can ask it anything while you cook.',
+    'e.g. what can I use instead of ricotta?', ['What can I substitute?', 'How do I know it\'s done?', 'Can I make this ahead?', 'Something went wrong. Help!'],
+    question => `I'm cooking from my Mealkeeper app right now, so keep your answer short and practical.
+
+${question || 'I have a question about this.'}
+
+${context}`, after);
 }
 
 function setClipOffer(v) {
