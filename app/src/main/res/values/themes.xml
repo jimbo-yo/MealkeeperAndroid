@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The WebView reports prefers-color-scheme from this theme, so it must switch with night mode. -->
+    <style name="Theme.Mealkeeper" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/mealkeeper_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

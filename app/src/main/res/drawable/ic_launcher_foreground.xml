@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Steaming bowl, matching the in-app brand mark. Drawn inside the 66dp adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,56 L78,56 A24,21 0 0 1 30,56 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,79 L64,79 L64,83 L44,83 Z" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M43,49 C38,43 48,39 43,32 M54,49 C49,43 59,39 54,32 M65,49 C60,43 70,39 65,32" />
+</vector>

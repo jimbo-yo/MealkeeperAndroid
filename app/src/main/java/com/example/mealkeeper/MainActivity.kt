@@ -4,14 +4,19 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.res.Configuration
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import org.json.JSONObject
@@ -23,6 +28,7 @@ class MainActivity : Activity() {
     private var pendingBackupJson: String? = null
     private var isPageLoaded = false
     private var safeTopDp = 44
+    private var safeBottomDp = 0
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,50 +39,63 @@ class MainActivity : Activity() {
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
 
-        window.statusBarColor = android.graphics.Color.rgb(247, 246, 240)
-        window.navigationBarColor = android.graphics.Color.rgb(247, 246, 240)
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
-            View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-        )
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            WebView.setWebContentsDebuggingEnabled(true)
+        }
 
         webView = WebView(this).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.allowFileAccess = true
-            settings.allowContentAccess = true
+            // Bundled assets load without file access; keep the page from reading other files or content URIs.
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
             webChromeClient = WebChromeClient()
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     isPageLoaded = true
                     // Insets usually arrive before the page loads, so re-apply them here.
-                    applySafeTop()
+                    applySafeInsets()
                     pendingScripts.forEach { runJs(it) }
                     pendingScripts.clear()
+                }
+
+                // Only the bundled page runs inside the app (it has the JS bridge); links open in the browser.
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                    val url = request.url
+                    if (url.scheme == "file" && url.path.orEmpty().startsWith("/android_asset/")) return false
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, url))
+                    } catch (e: ActivityNotFoundException) {
+                        e.printStackTrace()
+                    }
+                    return true
                 }
             }
             addJavascriptInterface(MealkeeperBridge(), "MealkeeperAndroid")
         }
 
         webView.setOnApplyWindowInsetsListener { _, insets ->
-            val rawTopInset = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                insets.getInsets(
-                    WindowInsets.Type.statusBars() or WindowInsets.Type.displayCutout()
-                ).top
+            val top: Int
+            val bottom: Int
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                top = insets.getInsets(WindowInsets.Type.statusBars() or WindowInsets.Type.displayCutout()).top
+                bottom = insets.getInsets(WindowInsets.Type.navigationBars()).bottom
             } else {
                 @Suppress("DEPRECATION")
-                insets.systemWindowInsetTop
+                top = insets.systemWindowInsetTop
+                @Suppress("DEPRECATION")
+                bottom = insets.systemWindowInsetBottom
             }
             val density = resources.displayMetrics.density
-            val topDp = (rawTopInset / density).toInt()
-            safeTopDp = if (topDp > 0) topDp else 44
-            if (isPageLoaded) applySafeTop()
+            safeTopDp = (top / density).toInt()
+            safeBottomDp = (bottom / density).toInt()
+            if (isPageLoaded) applySafeInsets()
             insets
         }
 
         setContentView(webView)
+        setUpSystemBars()
         handleIncomingIntent(intent)
         webView.loadUrl("file:///android_asset/index.html")
     }
@@ -96,13 +115,33 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun applySafeTop() {
-        webView.post {
-            webView.evaluateJavascript(
-                "document.documentElement.style.setProperty('--android-safe-top', '${safeTopDp}px')",
-                null
-            )
+    // Draw behind transparent status and navigation bars on every version (Android 15 forces this anyway);
+    // the page pads itself using the insets from applySafeInsets().
+    @Suppress("DEPRECATION")
+    private fun setUpSystemBars() {
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            val lightBars = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            window.insetsController?.setSystemBarsAppearance(if (night) 0 else lightBars, lightBars)
+        } else {
+            val lightBars = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                (if (night) 0 else lightBars)
         }
+    }
+
+    private fun applySafeInsets() {
+        runJs(
+            "document.documentElement.style.setProperty('--android-safe-top','${safeTopDp}px');" +
+                "document.documentElement.style.setProperty('--android-safe-bottom','${safeBottomDp}px')"
+        )
     }
 
     private fun runJs(script: String) {

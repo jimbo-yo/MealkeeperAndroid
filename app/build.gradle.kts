@@ -16,7 +16,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            // The default optimize rules keep @JavascriptInterface methods, which the page calls by name.
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
     }
 
