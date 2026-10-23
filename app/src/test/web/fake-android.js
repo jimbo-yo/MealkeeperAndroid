@@ -15,5 +15,11 @@ window.MealkeeperAndroid = {
   },
   openInChatGPT(prompt) {
     this.calls.push(['openInChatGPT', prompt]);
+  },
+  copyText(text) {
+    this.calls.push(['copyText', text]);
+  },
+  setClipboardWatch(enabled) {
+    this.calls.push(['setClipboardWatch', enabled]);
   }
 };

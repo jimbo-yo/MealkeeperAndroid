@@ -3,7 +3,11 @@ package com.example.mealkeeper
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
 import android.graphics.Color
@@ -29,6 +33,7 @@ class MainActivity : Activity() {
     private var isPageLoaded = false
     private var safeTopDp = 44
     private var safeBottomDp = 0
+    private val prefs: SharedPreferences by lazy { getSharedPreferences("mealkeeper", MODE_PRIVATE) }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,6 +63,7 @@ class MainActivity : Activity() {
                     applySafeInsets()
                     pendingScripts.forEach { runJs(it) }
                     pendingScripts.clear()
+                    offerCopiedMeal()
                 }
 
                 // Only the bundled page runs inside the app (it has the JS bridge); links open in the browser.
@@ -98,6 +104,34 @@ class MainActivity : Activity() {
         setUpSystemBars()
         handleIncomingIntent(intent)
         webView.loadUrl("file:///android_asset/index.html")
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) offerCopiedMeal()
+    }
+
+    // When the user copies a meal in ChatGPT or Claude and comes back, hand it to the page to offer an import.
+    // Android only lets the focused app read the clipboard and shows a "pasted" notice on each read, so read
+    // only clips we haven't seen (the description and its timestamp can be checked without reading), skip
+    // ones marked sensitive, and pass on only text that looks like a Mealkeeper export.
+    private fun offerCopiedMeal() {
+        if (!isPageLoaded || !prefs.getBoolean(PREF_CLIPBOARD_WATCH, true)) return
+        val clipboard = getSystemService(ClipboardManager::class.java) ?: return
+        val description = clipboard.primaryClipDescription ?: return
+        if (description.timestamp == prefs.getLong(PREF_LAST_CLIP, 0L)) return
+        markClipSeen(description)
+        if (!description.hasMimeType("text/*")) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            description.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true
+        ) return
+        val text = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString() ?: return
+        if (text.length > MAX_CLIP_CHARS || !(text.contains("\"meals\"") || text.contains("\"recipes\""))) return
+        runJs("window.receiveClipboardText&&window.receiveClipboardText(${JSONObject.quote(text)})")
+    }
+
+    private fun markClipSeen(description: ClipDescription) {
+        prefs.edit().putLong(PREF_LAST_CLIP, description.timestamp).apply()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -178,6 +212,21 @@ class MainActivity : Activity() {
     }
 
     inner class MealkeeperBridge {
+        @JavascriptInterface
+        fun copyText(text: String) {
+            runOnUiThread {
+                val clipboard = getSystemService(ClipboardManager::class.java) ?: return@runOnUiThread
+                clipboard.setPrimaryClip(ClipData.newPlainText("Mealkeeper", text))
+                // The app's own copies (setup instructions, shopping list) shouldn't come back as import offers.
+                clipboard.primaryClipDescription?.let { markClipSeen(it) }
+            }
+        }
+
+        @JavascriptInterface
+        fun setClipboardWatch(enabled: Boolean) {
+            prefs.edit().putBoolean(PREF_CLIPBOARD_WATCH, enabled).apply()
+        }
+
         @JavascriptInterface
         fun saveBackupFile(filename: String, json: String) {
             runOnUiThread {
@@ -281,5 +330,8 @@ class MainActivity : Activity() {
     companion object {
         private const val REQUEST_EXPORT_BACKUP = 41
         private const val REQUEST_RESTORE_BACKUP = 42
+        private const val PREF_CLIPBOARD_WATCH = "clipboardWatch"
+        private const val PREF_LAST_CLIP = "lastClipTimestamp"
+        private const val MAX_CLIP_CHARS = 500_000
     }
 }

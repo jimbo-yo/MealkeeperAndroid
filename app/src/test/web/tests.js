@@ -26,6 +26,9 @@ function reset() {
   lastAwake = null;
   importText = '';
   pendingRestore = null;
+  pendingImport = null;
+  aiTab = 'chatgpt';
+  clipOffer = true;
   render();
   bridge.calls.length = 0;
 }
@@ -102,8 +105,7 @@ test('import with no meals shows an error and keeps the dialog open', () => {
 test('imports the full mealkeeper-v1 sample', () => {
   importViaDialog(sampleExport);
   let m = meals[meals.length - 1];
-  eq(page, 'meals');
-  eq(selectedMeal, m.id, 'imported meal selected');
+  eq([page, selectedMeal], ['meal', m.id], 'a single imported meal opens');
   eq(m.time, '30 min');
   eq(m.recipes.map(r => [r.title, r.time, r.ingredients.length, r.instructions.length]),
     [['Lemon herb chicken', '25 min', 4, 3], ['Cucumber tomato salad', '10 min', 3, 2]]);
@@ -272,7 +274,7 @@ test('export sends the backup to Android', () => {
   assert(call, 'bridge not called');
   assert(/^mealkeeper-backup-\d{4}-\d{2}-\d{2}\.json$/.test(call[1]), 'file name ' + call[1]);
   let data = JSON.parse(call[2]);
-  eq([data.format, data.meals.length, data.settings], [BACKUP_FORMAT, 4, {awake: false, cookAwake: true}]);
+  eq([data.format, data.meals.length, data.settings], [BACKUP_FORMAT, 4, {awake: false, cookAwake: true, clipOffer: true}]);
 });
 
 test('restore asks first, then replaces the data', () => {
@@ -303,6 +305,82 @@ test('restoring a recipe export adds its meals; junk is rejected', () => {
   eq(meals.length, 5);
 });
 
+// ---- AI handoff ----
+
+const bridgeCalls = name => bridge.calls.filter(c => c[0] === name);
+
+test('the format the AI is given is one the importer accepts', () => {
+  let parsed = parseMealkeeperJson(EXPORT_FORMAT);
+  assert(parsed, 'skeleton is not valid JSON');
+  let m = fromV1Meal(parsed.meals[0], 0);
+  eq([m.recipes.length, m.recipes[0].ingredients.length, m.shopping.length, m.timeline.length], [1, 1, 1, 1]);
+  eq(m.shopping[0].usedIn, ['…'], 'used_in ids resolve to recipe titles');
+  for (let text of [AI_SETUP_INSTRUCTIONS, ONE_OFF_PROMPT]) assert(text.includes(EXPORT_FORMAT), 'format missing');
+  assert(AI_SETUP_INSTRUCTIONS.includes('"send it to Mealkeeper"'), 'trigger phrase missing');
+});
+
+test('AI screen has setup steps for ChatGPT and Claude', () => {
+  go('ai');
+  assert(main().textContent.includes('In ChatGPT, create a project'), 'ChatGPT steps');
+  assert(main().textContent.includes('Open ChatGPT'), 'ChatGPT button');
+  aiTab = 'claude';
+  render();
+  assert(main().textContent.includes('In Claude, create a project'), 'Claude steps');
+  copySetup();
+  eq(bridgeCalls('copyText').map(c => c[1]), [AI_SETUP_INSTRUCTIONS], 'copied through Android');
+  copyPrompt();
+  eq(bridgeCalls('copyText')[1][1], ONE_OFF_PROMPT);
+});
+
+test('a copied meal is offered, then imported and opened', () => {
+  receiveClipboardText('```json\n' + sampleExport + '\n```');
+  assert(modalOpen(), 'no offer');
+  assert(modal().textContent.includes('Import Mediterranean chicken bowls?'), modal().textContent);
+  assert(modal().textContent.includes('2 recipes · 6 shopping items · cooking timeline'), modal().textContent);
+  eq(meals.length, 4, 'imported before confirming');
+  confirmImport();
+  eq([meals.length, page, currentMeal().name, modalOpen()], [5, 'meal', 'Mediterranean chicken bowls', false]);
+});
+
+test('"Not now" leaves everything as it was', () => {
+  receiveClipboardText(sampleExport);
+  modal().querySelector('.outline').click();
+  eq([meals.length, modalOpen(), pendingImport], [4, false, null]);
+});
+
+test('copied text that isn\'t a meal is ignored', () => {
+  receiveClipboardText('{"recipes": "not really"}');
+  receiveClipboardText('some "meals" talk');
+  eq(modalOpen(), false);
+});
+
+test('no offer while a dialog is open or when the setting is off', () => {
+  openImport();
+  receiveClipboardText(sampleExport);
+  assert(modal().textContent.includes('Import AI-generated recipes'), 'replaced the open dialog');
+  closeModal();
+  setClipOffer(false);
+  receiveClipboardText(sampleExport);
+  eq(modalOpen(), false);
+});
+
+test('a shared meal is offered; other shared text opens the import dialog', () => {
+  receiveSharedText(sampleExport);
+  assert(modal().textContent.includes('SHARED WITH MEALKEEPER'), 'no offer');
+  closeModal();
+  receiveSharedText('Grandma\'s lasagna: lots of cheese');
+  assert(document.getElementById('import-area'), 'import dialog not open');
+  eq(document.getElementById('import-area').value, 'Grandma\'s lasagna: lots of cheese');
+});
+
+test('the copied-meal setting is saved and sent to Android', () => {
+  setClipOffer(false);
+  eq(bridgeCalls('setClipboardWatch').map(c => c[1]), [false]);
+  eq(JSON.parse(localStorage.getItem(STORE_KEY)).clipOffer, false);
+  go('settings');
+  eq(main().querySelectorAll('.toggle').length, 3);
+});
+
 // ---- Keep screen awake ----
 
 test('screen stays on only while cooking', () => {
@@ -331,7 +409,7 @@ test('keep-awake settings', () => {
   go('home');
   eq(lastAwakeCall(), true, 'always on');
   go('settings');
-  eq(main().querySelectorAll('.toggle').length, 2);
+  eq(main().querySelectorAll('.toggle').length, 3);
 });
 
 // ---- Layout ----
