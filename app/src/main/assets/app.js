@@ -16,7 +16,7 @@ let navStack = [],
   recipeOpen = false,
   lastAwake = null,
   importText = '',
-  aiTab = 'chatgpt',
+  myAi = 'chatgpt',
   clipOffer = true,
   lastClipOffer = null,
   pendingImport = null,
@@ -427,7 +427,7 @@ function saveState() {
       awake,
       cookAwake,
       clipOffer,
-      aiTab
+      ai: myAi
     }))
   } catch (e) {}
 }
@@ -453,7 +453,9 @@ function applyState(s) {
   awake = !!s.awake;
   cookAwake = s.cookAwake !== false;
   clipOffer = s.clipOffer !== false;
-  if (s.aiTab in AI_GUIDES) aiTab = s.aiTab;
+  // Saves from before the "Your AI" setting stored the AI last used as aiTab.
+  let ai = s.ai || s.aiTab;
+  if (ai in AI_GUIDES) myAi = ai;
 }
 
 function exportBackup() {
@@ -712,24 +714,24 @@ function timelinePage(embedded = false) {
 }
 
 function aiPage() {
-  let guide = AI_GUIDES[aiTab],
+  let guide = AI_GUIDES[myAi],
     step = (n, title, body) => `<div class="row" style="align-items:flex-start;margin-bottom:12px"><div class="recipe-icon" style="width:38px;height:38px;font-size:16px">${n}</div><div><strong>${title}</strong><div class="muted small" style="margin-top:4px;line-height:1.5">${body}</div></div></div>`;
   return `<div class="eyebrow">PLAN WITH YOUR AI</div><h1 class="headline">Brainstorm there, cook here</h1><p class="subhead">Plan meals with ChatGPT or Claude the way you normally would. When you're happy, say <strong>“send it to the pan”</strong> and the meal comes here with its recipes, shopping list and cooking timeline.</p>
 <div class="panel">${step('1', 'Set up your AI once', 'Give it standing instructions, so you never have to paste a prompt into a chat.')}
-<div class="tabs" style="margin-top:4px">${Object.entries(AI_GUIDES).map(([k, g]) => `<button class="tab ${k === aiTab ? 'active' : ''}" onclick="aiTab='${k}';render()">${g.name}</button>`).join('')}</div>
+<div class="muted small" style="margin-top:4px">Your AI</div>${aiChoice()}
 <ol style="padding-left:20px;margin:0 0 14px;line-height:1.6;font-size:14px">${guide.steps.map(x => `<li style="margin-bottom:6px">${x}</li>`).join('')}</ol>
-<div class="actions"><button class="primary" onclick="copySetup()">▣ Copy instructions</button><button class="secondary" onclick="openAi(aiTab)">Open ${guide.name} ↗</button></div>
+<div class="actions"><button class="primary" onclick="copySetup()">▣ Copy instructions</button><button class="secondary" onclick="openAi(myAi)">Open ${guide.name} ↗</button></div>
 <details style="margin-top:14px"><summary class="muted small">Show the instructions</summary><textarea class="field" rows="12" readonly style="margin-top:10px">${escapeHtml(AI_SETUP_INSTRUCTIONS)}</textarea></details></div>
 <div class="panel">${step('2', 'Plan, then send it here', `When the meal is right, say “send it to the pan”. Tap <strong>Copy</strong> on the code block it replies with, then come back here. ${clipOffer ? 'Prompt to Pan will offer to import it.' : 'Then tap Import and paste it. (Turn on “Offer to import copied meals” in Settings to skip this.)'}`)}
 ${step('↗', 'Or share it', 'Long-press the reply, tap <strong>Share</strong>, and pick Prompt to Pan.')}
 <button class="secondary" onclick="openImport()">↥ Import manually</button></div>
 <div class="panel"><strong>Not set up yet?</strong><p class="muted small" style="line-height:1.5;margin:6px 0 12px">Paste this prompt at the end of any chat to send that meal over.</p>
 <div class="actions"><button class="secondary" onclick="copyPrompt()">▣ Copy prompt</button><button class="secondary" onclick="sharePrompt()">☍ Share prompt</button></div>
-<p class="muted small" style="margin:14px 0 8px">Or start a new chat with it:</p><div class="actions"><button class="outline" onclick="sendPrompt('chatgpt', ONE_OFF_PROMPT)">ChatGPT ↗</button><button class="outline" onclick="sendPrompt('claude', ONE_OFF_PROMPT)">Claude ↗</button></div></div>`
+<button class="outline" style="margin-top:12px" onclick="sendPrompt(myAi, ONE_OFF_PROMPT)">Start a new chat in ${guide.name} ↗</button></div>`
 }
 
 function settingsPage() {
-  return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Prompt to Pan is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a meal export from ChatGPT, Claude or another AI.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up ChatGPT or Claude to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in ChatGPT or Claude and come back, Prompt to Pan offers to import it. Android shows a notice each time it checks a new copy.</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>`
+  return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Prompt to Pan is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a meal export from ChatGPT, Claude or another AI.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✦</div><div style="flex:1"><strong>Your AI</strong><div class="muted small" style="margin-top:4px">Revise with AI and Ask AI open a new chat here.</div></div></div>${aiChoice()}<div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up ChatGPT or Claude to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in ChatGPT or Claude and come back, Prompt to Pan offers to import it. Android shows a notice each time it checks a new copy.</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>`
 }
 
 // The link back from the shopping list or timeline: to the recipe the user came from, or else to the meal.
@@ -745,6 +747,11 @@ function backLink() {
 // stops the click from also ticking the item.
 function recipeLink(title) {
   return `<span class="recipe-link" onclick="event.preventDefault();event.stopPropagation();showRecipeTitled(this.textContent)">${escapeHtml(title)}</span>`;
+}
+
+// The "Your AI" switch, shared by Settings and the Plan with AI screen.
+function aiChoice() {
+  return `<div class="tabs" style="margin:6px 0 14px">${Object.entries(AI_GUIDES).map(([k, g]) => `<button class="tab ${k === myAi ? 'active' : ''}" onclick="setMyAi('${k}')">${g.name}</button>`).join('')}</div>`;
 }
 
 function mealPicker(m) {
@@ -921,7 +928,7 @@ function copyText(text, done) {
 }
 
 function copySetup() {
-  copyText(AI_SETUP_INSTRUCTIONS, `Copied. Paste it into your ${AI_GUIDES[aiTab].name} project's instructions.`);
+  copyText(AI_SETUP_INSTRUCTIONS, `Copied. Paste it into your ${AI_GUIDES[myAi].name} project's instructions.`);
 }
 
 function copyPrompt() {
@@ -956,20 +963,18 @@ function sharePrompt() {
 // build(text) returns the full prompt; after(), if given, reopens what the user was looking at.
 function aiModal(eyebrow, title, intro, placeholder, chips, build, after) {
   pendingAsk = {build, after};
-  let order = aiTab === 'claude' ? ['chatgpt', 'claude'] : ['claude', 'chatgpt'];
-  openModal(`<div class="eyebrow">${eyebrow}</div><h2>${escapeHtml(title)}</h2><p class="subhead" style="margin-bottom:12px">${intro}</p><textarea id="ai-request" class="field" rows="3" style="min-height:90px" placeholder="${escapeHtml(placeholder)}"></textarea><div class="actions" style="margin-top:10px">${chips.map(c => `<button class="outline" style="font-size:12px;padding:7px 12px" onclick="document.getElementById('ai-request').value=this.textContent">${escapeHtml(c)}</button>`).join('')}</div><div class="modal-foot">${order.map(k => `<button class="${k === aiTab ? 'primary' : 'secondary'}" onclick="sendToAi('${k}')">Ask ${AI_GUIDES[k].name} ↗</button>`).join('')}</div>`);
+  let name = AI_GUIDES[myAi].name;
+  openModal(`<div class="eyebrow">${eyebrow}</div><h2>${escapeHtml(title)}</h2><p class="subhead" style="margin-bottom:12px">${intro}</p><textarea id="ai-request" class="field" rows="3" style="min-height:90px" placeholder="${escapeHtml(placeholder)}"></textarea><div class="actions" style="margin-top:10px">${chips.map(c => `<button class="outline" style="font-size:12px;padding:7px 12px" onclick="document.getElementById('ai-request').value=this.textContent">${escapeHtml(c)}</button>`).join('')}</div><p class="muted small" style="margin:14px 0 0">Opens a new chat in ${name}. <button class="text-btn" style="font-size:12px" onclick="closeModal();go('settings')">Change</button></p><div class="modal-foot"><button class="primary" onclick="sendToAi()">Ask ${name} ↗</button></div>`);
 }
 
-function sendToAi(ai) {
+function sendToAi() {
   if (!pendingAsk) return;
   let {build, after} = pendingAsk,
     prompt = build(document.getElementById('ai-request').value.trim());
   pendingAsk = null;
-  aiTab = ai;
   closeModal();
   if (after) after();
-  saveState();
-  sendPrompt(ai, prompt);
+  sendPrompt(myAi, prompt);
 }
 
 // Starts a new chat with the prompt. On Android it goes to the ChatGPT or Claude app as a share, landing in the
@@ -1035,6 +1040,12 @@ function askAbout(kind, i) {
 ${question || 'I have a question about this.'}
 
 ${context}`, after);
+}
+
+function setMyAi(ai) {
+  myAi = ai;
+  render();
+  notify(`Revise and Ask will use ${AI_GUIDES[ai].name}`);
 }
 
 function setClipOffer(v) {
