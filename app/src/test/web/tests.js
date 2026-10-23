@@ -1,0 +1,354 @@
+// Browser tests for app.js. scripts/run-web-tests.sh loads the app with fake-android.js before it and this file after it.
+// Every test starts from the demo data with empty storage (see reset()).
+
+const results = [];
+const bridge = window.MealkeeperAndroid;
+const main = () => document.getElementById('main');
+const modal = () => document.getElementById('modal');
+const modalOpen = () => document.getElementById('modal-bg').style.display === 'flex';
+const awakeCalls = () => bridge.calls.filter(c => c[0] === 'setKeepScreenOn').map(c => c[1]);
+const lastAwakeCall = () => awakeCalls().pop();
+const times = () => [...main().querySelectorAll('.time')].map(e => e.textContent);
+const hasMarkup = el => el.querySelector('b, i, u, img, script');
+
+function reset() {
+  localStorage.clear();
+  closeModal();
+  meals.length = 0;
+  DEMO_MEALS.map(cleanMeal).forEach(m => meals.push(m));
+  navStack = [];
+  page = 'home';
+  selectedMeal = 1;
+  mealTab = 'recipes';
+  awake = false;
+  cookAwake = true;
+  recipeOpen = false;
+  lastAwake = null;
+  importText = '';
+  pendingRestore = null;
+  render();
+  bridge.calls.length = 0;
+}
+
+function test(name, fn) {
+  reset();
+  try {
+    fn();
+    results.push({name, ok: true});
+  } catch (e) {
+    results.push({name, ok: false, error: e.message});
+  }
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message || 'assertion failed');
+}
+
+function eq(actual, expected, message) {
+  let a = JSON.stringify(actual), b = JSON.stringify(expected);
+  if (a !== b) throw new Error(`${message ? message + ': ' : ''}expected ${b}, got ${a}`);
+}
+
+function importViaDialog(text) {
+  openImport();
+  document.getElementById('import-area').value = text;
+  doImport();
+}
+
+const HOSTILE = {
+  format: 'mealkeeper-v1',
+  meals: [{
+    name: '<b>Evil</b>',
+    total_time: '<img src=x onerror="window.pwned=1">',
+    servings: '<b>9</b>',
+    recipes: [{
+      id: 'x',
+      title: '<b>t</b>',
+      course: '<i>c</i>',
+      ingredients: [{name: '<img src=y>', quantity: '<i>1</i>', unit: '<u>u</u>'}],
+      instructions: ['<script>bad()</script>'],
+      make_ahead_notes: '<b>m</b>'
+    }],
+    shopping_list: [{name: '<b>s</b>', category: '<i>g</i>', used_in: ['<u>x</u>']}],
+    timeline: [{task: '<b>k</b>', instructions: '<img src=z>', recipe_id: 'x'}]
+  }]
+};
+
+// ---- Import parsing ----
+
+test('parses JSON wrapped in ``` fences and chatter', () => {
+  eq(parseMealkeeperJson('Here you go:\n```json\n' + sampleExport + '\n```\nEnjoy!').meals.length, 1);
+});
+
+test('parses plain JSON', () => {
+  eq(parseMealkeeperJson(sampleExport).meals.length, 1);
+});
+
+test('wraps a single meal object in a meals list', () => {
+  eq(parseMealkeeperJson('{"name":"X","recipes":[{"title":"a"}]}').meals[0].name, 'X');
+});
+
+test('returns null for text without JSON', () => {
+  eq(parseMealkeeperJson('no json here'), null);
+});
+
+test('import with no meals shows an error and keeps the dialog open', () => {
+  importViaDialog('{"foo": 1}');
+  assert(modalOpen(), 'dialog closed');
+  eq(meals.length, 4);
+  assert(document.getElementById('toast').textContent.includes('no meals'), 'wrong message');
+});
+
+test('imports the full mealkeeper-v1 sample', () => {
+  importViaDialog(sampleExport);
+  let m = meals[meals.length - 1];
+  eq(page, 'meals');
+  eq(selectedMeal, m.id, 'imported meal selected');
+  eq(m.time, '30 min');
+  eq(m.recipes.map(r => [r.title, r.time, r.ingredients.length, r.instructions.length]),
+    [['Lemon herb chicken', '25 min', 4, 3], ['Cucumber tomato salad', '10 min', 3, 2]]);
+  eq(m.recipes[0].makeAhead, 'Marinate up to 1 day ahead.');
+  eq(m.shopping.length, 6);
+  eq(m.shopping[0].qty, '1 ½ lb');
+  eq(m.shopping[5].usedIn, ['Lemon herb chicken', 'Cucumber tomato salad'], 'used_in ids become titles');
+  eq(m.timeline.map(t => t.offset), [0, 10, 15, 25]);
+});
+
+test('builds the shopping list from ingredients when the export has none', () => {
+  let data = JSON.parse(sampleExport);
+  delete data.meals[0].shopping_list;
+  importMeals(data);
+  let list = meals[meals.length - 1].shopping, oil = list.find(x => x.name === 'Olive oil');
+  eq(list.length, 6);
+  eq(oil.qty, '3 tbsp', '2 tbsp + 1 tbsp');
+  eq(oil.usedIn.length, 2);
+});
+
+test('imports the older minimal export (titles and time strings only)', () => {
+  importMeals(parseMealkeeperJson('{"meals":[{"name":"Old","total_time":"35 min","recipes":[{"title":"A","total_time":"25 min"}]}]}'));
+  let m = meals[meals.length - 1];
+  eq([m.time, m.recipes[0].time, m.shopping.length], ['35 min', '25 min', 0]);
+});
+
+test('imported text is shown as text, never as HTML', () => {
+  importMeals(HOSTILE);
+  let id = meals[meals.length - 1].id;
+  for (let p of ['meals', 'shopping', 'timeline']) {
+    selectedMeal = id;
+    go(p);
+    assert(!hasMarkup(main()), p + ' page rendered markup');
+  }
+  openMeal(id);
+  assert(!hasMarkup(main()), 'meal page rendered markup');
+  assert(main().textContent.includes('<b>Evil</b>'), 'name not shown as text');
+  showRecipe(0);
+  assert(!hasMarkup(modal()), 'recipe rendered markup');
+});
+
+// ---- Formatting ----
+
+test('formats quantities as kitchen fractions', () => {
+  eq([fmtQty(1.5, 'lb'), fmtQty(0.5, 'cup'), fmtQty(2, ''), fmtQty(1.2, 'kg'), fmtQty('a pinch', ''), fmtQty(null, 'tsp')],
+    ['1 ½ lb', '½ cup', '2', '1.2 kg', 'a pinch', 'tsp']);
+});
+
+test('formats minutes and clock times', () => {
+  eq([fmtMinutes(55), fmtMinutes(70), fmtMinutes(120), fmtMinutes(0)], ['55 min', '1 hr 10 min', '2 hr', '']);
+  eq([fmtClock(clockMinutes('18:30')), fmtClock(clockMinutes('00:05')), fmtClock(-30)], ['6:30 PM', '12:05 AM', '11:30 PM']);
+});
+
+// ---- Screens ----
+
+test('timeline works back from the serving time', () => {
+  go('timeline');
+  let t = times();
+  eq([t[0], t[t.length - 1], t.length], ['5:35 PM', '6:30 PM', 7]);
+  assert(main().textContent.includes('Sausage & pepper rigatoni'), 'recipe name missing');
+  setServeAt('19:00');
+  eq(times()[0], '6:05 PM');
+  eq(meals[0].serveAt, '19:00');
+});
+
+test('check marks belong to the selected meal', () => {
+  go('shopping');
+  toggleItem(0, true);
+  assert(meals[0].shopping[0].checked, 'not checked');
+  assert(main().textContent.includes('13 items left'), 'count not updated');
+  selectedMeal = 2;
+  render();
+  assert(main().textContent.includes('No shopping list yet'), 'other meal should be empty');
+  assert(main().querySelector('select'), 'meal picker missing');
+  clearChecks();
+  assert(meals[0].shopping[0].checked, 'clearing another meal changed this one');
+});
+
+test('meals without a timeline show an empty state', () => {
+  selectedMeal = 3;
+  go('timeline');
+  assert(main().textContent.includes('No cooking timeline yet'));
+});
+
+test('recipe details show ingredients, steps and make-ahead notes', () => {
+  openMeal(1);
+  showRecipe(0);
+  eq(modal().querySelectorAll('ol li').length, 3);
+  assert(modal().textContent.includes('Cherry tomatoes'), 'ingredient missing');
+  assert(modal().textContent.includes('Make ahead'), 'make-ahead missing');
+});
+
+test('home follows the selected meal', () => {
+  meals[0].shopping[0].checked = true;
+  render();
+  assert(main().textContent.includes('Start with: Prep everything'), 'timeline summary missing');
+  assert(main().textContent.includes('1 of 14 items checked'), 'shopping summary wrong');
+});
+
+test('the meal page survives having no meals', () => {
+  applyState({meals: []});
+  page = 'meal';
+  render();
+  assert(main().textContent.includes('Meal collections'));
+});
+
+// ---- Back button ----
+
+test('back walks the page history, then lets Android close the app', () => {
+  go('meals');
+  openMeal(1);
+  eq([handleBack(), page], [true, 'meals']);
+  eq([handleBack(), page], [true, 'home']);
+  eq(handleBack(), false);
+});
+
+test('back closes a dialog before changing page', () => {
+  go('settings');
+  openImport();
+  eq([handleBack(), page, modalOpen()], [true, 'settings', false]);
+  eq([handleBack(), page], [true, 'home']);
+});
+
+test('back from a page with no history goes home', () => {
+  page = 'timeline';
+  render();
+  eq([handleBack(), page], [true, 'home']);
+});
+
+// ---- Saving, backups and restore ----
+
+test('every change is saved and loads back', () => {
+  meals[0].shopping[3].checked = true;
+  meals[0].serveAt = '17:45';
+  selectedMeal = 1;
+  awake = true;
+  cookAwake = false;
+  render();
+  let saved = JSON.parse(localStorage.getItem(STORE_KEY));
+  meals.length = 0;
+  selectedMeal = 0;
+  awake = false;
+  cookAwake = true;
+  applyState(saved);
+  assert(meals[0].shopping[3].checked && !meals[0].shopping[2].checked, 'check marks');
+  eq([meals[0].serveAt, selectedMeal, awake, cookAwake], ['17:45', 1, true, false]);
+});
+
+test('older saves (one global checklist, recipes as arrays) are upgraded', () => {
+  applyState({
+    meals: [
+      {id: 1, name: 'Sunday Italian supper', recipes: [['🍅', 'Roasted tomato bruschetta', 'Starter · 15 min']]},
+      {id: 99, name: 'Legacy import', recipes: [['🍴', 'Thing', 'Recipe · 20 min']], time: '20 min'}
+    ],
+    checked: [0, 3],
+    awake: false
+  });
+  eq(meals[0].shopping.length, 14, 'demo meal gets full data back');
+  eq(meals[0].shopping.filter(x => x.checked).map(x => x.name), ['Italian sausage links', 'Cherry tomatoes']);
+  eq([meals[1].recipes[0].title, meals[1].recipes[0].time], ['Thing', '20 min']);
+});
+
+test('export sends the backup to Android', () => {
+  exportBackup();
+  let call = bridge.calls.find(c => c[0] === 'saveBackupFile');
+  assert(call, 'bridge not called');
+  assert(/^mealkeeper-backup-\d{4}-\d{2}-\d{2}\.json$/.test(call[1]), 'file name ' + call[1]);
+  let data = JSON.parse(call[2]);
+  eq([data.format, data.meals.length, data.settings], [BACKUP_FORMAT, 4, {awake: false, cookAwake: true}]);
+});
+
+test('restore asks first, then replaces the data', () => {
+  let backup = {format: BACKUP_FORMAT, exported_at: '2026-10-23T10:00:00Z', meals: [{id: 7, name: 'Backed up', recipes: []}], settings: {awake: true}};
+  receiveBackupFile('```json\n' + JSON.stringify(backup) + '\n```');
+  assert(modalOpen(), 'no confirmation');
+  eq(meals.length, 4, 'replaced before confirming');
+  confirmRestore();
+  eq([meals.length, meals[0].name, page, awake, cookAwake], [1, 'Backed up', 'home', true, true]);
+});
+
+test('restored backups are cleaned like imports', () => {
+  receiveBackupFile(JSON.stringify({
+    format: BACKUP_FORMAT,
+    meals: [{name: '<b>x</b>', art: 'pasta" onclick="alert(1)', recipes: ['notarray', {title: '<img src=x>'}]}, {nope: 1}],
+    settings: {meals: 'x'}
+  }));
+  confirmRestore();
+  eq([meals.length, meals[0].art, meals[0].recipes.length], [1, '', 2]);
+  go('meals');
+  assert(!hasMarkup(main()), 'rendered markup');
+});
+
+test('restoring a recipe export adds its meals; junk is rejected', () => {
+  receiveBackupFile(sampleExport);
+  eq(meals.length, 5);
+  receiveBackupFile('hello');
+  eq(meals.length, 5);
+});
+
+// ---- Keep screen awake ----
+
+test('screen stays on only while cooking', () => {
+  let steps = [];
+  go('timeline'); steps.push(lastAwakeCall());
+  go('home'); steps.push(lastAwakeCall());
+  openMeal(1); showRecipe(0); steps.push(lastAwakeCall());
+  closeModal(); steps.push(lastAwakeCall());
+  mealTab = 'timeline'; render(); steps.push(lastAwakeCall());
+  eq(steps, [true, false, true, false, true]);
+});
+
+test('keep-awake only calls Android when the state changes', () => {
+  go('timeline');
+  let n = awakeCalls().length;
+  render();
+  render();
+  eq(awakeCalls().length, n);
+});
+
+test('keep-awake settings', () => {
+  go('timeline');
+  setCookAwake(false);
+  eq(lastAwakeCall(), false, 'cooking option off');
+  setAwake(true);
+  go('home');
+  eq(lastAwakeCall(), true, 'always on');
+  go('settings');
+  eq(main().querySelectorAll('.toggle').length, 2);
+});
+
+// ---- Layout ----
+
+test('bottom nav clears the Android navigation bar', () => {
+  let nav = document.querySelector('.mobile-nav');
+  document.documentElement.style.setProperty('--android-safe-bottom', '24px');
+  let padded = getComputedStyle(nav).paddingBottom;
+  document.documentElement.style.removeProperty('--android-safe-bottom');
+  eq(padded, '31px');
+});
+
+// ---- Report ----
+
+reset();
+let failed = results.filter(r => !r.ok);
+results.forEach(r => console.log(`MKTEST ${r.ok ? 'PASS' : 'FAIL'} ${r.name}${r.ok ? '' : ' -- ' + r.error}`));
+console.log(`MKTEST DONE ${results.length} tests, ${failed.length} failed`);
+document.body.innerHTML = `<pre style="padding:16px;white-space:pre-wrap">${escapeHtml(results.map(r =>
+  `${r.ok ? 'PASS' : 'FAIL'} ${r.name}${r.ok ? '' : '\n     ' + r.error}`).join('\n'))}\n\n${results.length} tests, ${failed.length} failed</pre>`;

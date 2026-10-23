@@ -14,10 +14,24 @@ The first Gradle sync needs internet access to download the Android Gradle Plugi
 
 ## Project structure
 
-- `app/src/main/java/com/example/mealkeeper/MainActivity.kt` — Android Activity and WebView host.
-- `app/src/main/assets/index.html` — Mealkeeper UI and prototype logic.
-- `app/src/main/AndroidManifest.xml` — app declaration.
-- `app/build.gradle.kts` — Android build configuration.
+- `app/src/main/java/com/example/mealkeeper/MainActivity.kt` — Android Activity: hosts the WebView, edge-to-edge insets, the `MealkeeperAndroid` JavaScript bridge (keep-awake, sharing, backup files) and the back button.
+- `app/src/main/assets/` — the Mealkeeper UI, loaded from `file:///android_asset/index.html`:
+  - `index.html` — page shell (top bar, bottom nav, modal, toast).
+  - `app.css` — styles (phone layout; light and dark).
+  - `app.js` — app logic, grouped into sections: state, helpers, meal data and import, saving and backups, navigation, screens, actions.
+  - `demo-data.js` — demo meals for first launch and the example `mealkeeper-v1` export used in the AI prompt.
+- `app/src/main/res/` — theme (with a night variant) and the adaptive launcher icon.
+- `app/src/test/web/` — browser tests for `app.js`, plus a fake Android bridge.
+- `scripts/run-web-tests.sh` — runs those tests in headless Firefox.
+
+## Tests
+
+```
+scripts/run-web-tests.sh          # prints PASS/FAIL per test; exits non-zero on failure
+scripts/run-web-tests.sh --keep   # also keeps the test page so you can open it in a browser to debug
+```
+
+The tests load the real `index.html` with `fake-android.js` before `app.js` and `tests.js` after it. They need Firefox installed. You can also open the page in a browser without Android: the app falls back to browser features (downloads, file picker, clipboard) where the bridge is missing.
 
 ## Current behavior and limitations
 
@@ -40,4 +54,3 @@ The first Gradle sync needs internet access to download the Android Gradle Plugi
 
 1. Move storage from `localStorage` to Room (or IndexedDB) once the data model settles.
 2. Define Kotlin data classes for meals, recipes, ingredients, and timeline steps.
-3. Add tests for import parsing and shopping-list aggregation.

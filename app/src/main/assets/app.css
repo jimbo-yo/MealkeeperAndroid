@@ -1,0 +1,744 @@
+/* Mealkeeper styles. The app always uses its phone layout; wider screens show it as a centred column.
+   Colours use light-dark(), which follows the system theme (on Android, via Theme.Mealkeeper's night variant).
+   MainActivity sets --android-safe-top / --android-safe-bottom to the status- and navigation-bar heights. */
+
+:root {
+  --font-body: Inter, Roboto, "Segoe UI", sans-serif;
+  --safe-bottom: max(env(safe-area-inset-bottom), var(--android-safe-bottom, 0px));
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background: light-dark(#f7f6f0, #111411);
+  color: light-dark(#1d211c, #e5e8e1);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 0;
+  transition: filter .15s, transform .15s;
+}
+
+button:hover {
+  filter: brightness(.96);
+}
+
+button:active {
+  transform: scale(.98);
+}
+
+/* ---- App shell ---- */
+
+.app {
+  min-height: 100vh;
+  background-color: light-dark(#f7f6f0, #111411);
+  color: light-dark(#1d211c, #e5e8e1);
+}
+
+.topbar {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(var(--android-safe-top, 44px) + 10px) 12px 10px;
+  border-bottom: 1px solid light-dark(#e1e3da, #30352f);
+  position: sticky;
+  top: 0;
+  background: light-dark(#f7f6f0, #171b17);
+  z-index: 5;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 750;
+  font-size: 18px;
+  letter-spacing: -.5px;
+}
+
+.brand-icon {
+  background: #496548;
+  color: white;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  font-size: 21px;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.top-actions .primary {
+  padding: 9px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.main {
+  width: 100%;
+  padding: 20px 14px calc(92px + var(--safe-bottom));
+  overflow-wrap: anywhere;
+}
+
+.mobile-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  display: flex;
+  justify-content: space-around;
+  background: light-dark(#fffefa, #1b201b);
+  border-top: 1px solid light-dark(#e1e3da, #30352f);
+  padding: 7px 2px calc(7px + var(--safe-bottom));
+}
+
+.mobile-nav button {
+  background: transparent;
+  color: light-dark(#6d7569, #a1aa9d);
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  padding: 4px 2px;
+}
+
+.mobile-nav button.active {
+  color: light-dark(#496548, #c4ddb9);
+  font-weight: 750;
+}
+
+.mobile-nav span {
+  font-size: 19px;
+}
+
+.toast {
+  position: fixed;
+  bottom: calc(84px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 28px);
+  background: light-dark(#283b28, #dcebd6);
+  color: light-dark(white, #1e2c1d);
+  padding: 13px 18px;
+  border-radius: 99px;
+  box-shadow: 0 8px 30px #0002;
+  font-size: 13px;
+  text-align: center;
+  white-space: normal;
+  z-index: 10;
+  display: none;
+}
+
+.modal-bg {
+  position: fixed;
+  inset: 0;
+  background: #0006;
+  z-index: 15;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 10px 10px calc(10px + var(--safe-bottom));
+}
+
+.modal {
+  width: 100%;
+  max-height: 88vh;
+  overflow: auto;
+  background: light-dark(#fffefa, #1b201b);
+  border-radius: 24px 24px 14px 14px;
+  padding: 19px;
+  box-shadow: 0 20px 80px #0003;
+}
+
+.modal h2 {
+  margin: 0 0 7px;
+  font-size: 22px;
+}
+
+.modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.modal-foot button {
+  flex: 1;
+}
+
+/* ---- Text and layout helpers ---- */
+
+.eyebrow {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: light-dark(#65755e, #a8bd9f);
+  font-weight: 750;
+  margin-bottom: 10px;
+}
+
+.headline {
+  font-size: clamp(25px, 7vw, 30px);
+  line-height: 1.1;
+  letter-spacing: -.7px;
+  margin: 0 0 10px;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.subhead {
+  color: light-dark(#6b7167, #a4aca1);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0 0 20px;
+}
+
+.muted {
+  color: light-dark(#73796f, #a0a99e);
+}
+
+.small {
+  font-size: 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spread {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.spread > .primary,
+.spread > .outline,
+.spread > .secondary {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.divider {
+  height: 1px;
+  background: light-dark(#e5e7df, #30372f);
+  margin: 16px 0;
+}
+
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 23px 0 15px;
+}
+
+.section-head h2 {
+  font-size: 17px;
+  margin: 0;
+  letter-spacing: -.4px;
+}
+
+.panel {
+  background: light-dark(#fffefa, #1b201b);
+  border: 1px solid light-dark(#e3e5dc, #30362f);
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 18px;
+  min-width: 0;
+}
+
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: light-dark(#72796e, #a3aca0);
+}
+
+.badge {
+  font-size: 11px;
+  border-radius: 99px;
+  background: light-dark(#e4eadc, #2b3928);
+  color: light-dark(#45613f, #c3dcb9);
+  padding: 6px 9px;
+  font-weight: 750;
+}
+
+/* ---- Buttons and form controls ---- */
+
+.primary {
+  background: #496548;
+  color: white;
+  border-radius: 99px;
+  padding: 12px 19px;
+  font-size: 14px;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secondary {
+  background: light-dark(#e7e9e0, #2a3029);
+  color: light-dark(#293a28, #e1e8dc);
+  border-radius: 99px;
+  padding: 11px 17px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.outline {
+  background: transparent;
+  color: inherit;
+  border: 1px solid light-dark(#cdd3c6, #454e43);
+  border-radius: 99px;
+  padding: 10px 15px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.text-btn {
+  color: light-dark(#496548, #b7d2ae);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.actions button {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.field {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid light-dark(#cdd3c6, #424b40);
+  background: light-dark(#fffefa, #171b17);
+  color: inherit;
+  border-radius: 13px;
+  padding: 13px 14px;
+  outline: none;
+}
+
+.field:focus {
+  border-color: #496548;
+  box-shadow: 0 0 0 2px #49654822;
+}
+
+textarea.field {
+  resize: vertical;
+  min-height: 140px;
+  line-height: 1.5;
+}
+
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  margin: 15px 0 7px;
+}
+
+.toggle {
+  appearance: none;
+  width: 44px;
+  height: 26px;
+  background: light-dark(#d5d9d0, #454d42);
+  border-radius: 99px;
+  position: relative;
+  cursor: pointer;
+  transition: .2s;
+  flex-shrink: 0;
+}
+
+.toggle::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  transition: .2s;
+}
+
+.toggle:checked {
+  background: #496548;
+}
+
+.toggle:checked::before {
+  transform: translateX(18px);
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid light-dark(#e1e4db, #343a32);
+  margin: 20px 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+
+.tab {
+  flex-shrink: 0;
+  padding: 11px 10px;
+  background: transparent;
+  color: light-dark(#747a70, #a3aba0);
+  font-size: 12px;
+  border-bottom: 2px solid transparent;
+}
+
+.tab.active {
+  color: light-dark(#496548, #c3dfb8);
+  border-color: #496548;
+  font-weight: 750;
+}
+
+/* ---- Home stats ---- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 20px 0;
+}
+
+.stat {
+  background: light-dark(#fffefa, #1b201b);
+  border: 1px solid light-dark(#e6e7df, #30362f);
+  border-radius: 15px;
+  padding: 11px 9px;
+  min-width: 0;
+}
+
+.stat .number {
+  font-size: clamp(18px, 5vw, 22px);
+  font-weight: 750;
+  letter-spacing: -.6px;
+}
+
+.stat .label {
+  font-size: 10px;
+  line-height: 1.35;
+  color: light-dark(#73796f, #9ca59a);
+  margin-top: 5px;
+}
+
+/* ---- Meal cards ---- */
+
+.meal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.meal-card {
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid light-dark(#e2e4da, #30372f);
+  background: light-dark(#fffefa, #1b201b);
+  cursor: pointer;
+}
+
+.meal-art {
+  height: 96px;
+  padding: 16px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  background: linear-gradient(125deg, #d9e0c9, #b4c7a6);
+  color: #30402d;
+  position: relative;
+}
+
+.meal-art.pasta {
+  background: linear-gradient(125deg, #f2d8a9, #d6a36d);
+  color: #51391f;
+}
+
+.meal-art.soup {
+  background: linear-gradient(125deg, #d4e2d9, #91b8a3);
+  color: #29483a;
+}
+
+.meal-art.taco {
+  background: linear-gradient(125deg, #f0d5ac, #d8a56b);
+  color: #533c22;
+}
+
+.art-emoji {
+  font-size: 42px;
+  filter: drop-shadow(0 4px 4px #0002);
+}
+
+.art-tag {
+  font-size: 11px;
+  font-weight: 750;
+  background: #ffffffb8;
+  border-radius: 99px;
+  padding: 7px 10px;
+}
+
+.meal-content {
+  padding: 15px;
+}
+
+.meal-content h3 {
+  font-size: 17px;
+  margin: 0 0 7px;
+}
+
+.meal-content p {
+  font-size: 12px;
+  line-height: 1.5;
+  color: light-dark(#74796f, #a0a89e);
+  margin: 0 0 15px;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: light-dark(#686f64, #a0a89d);
+}
+
+.mini-avatars {
+  display: flex;
+  gap: 5px;
+}
+
+.avatar {
+  width: 25px;
+  height: 25px;
+  border-radius: 8px;
+  background: light-dark(#e7ebdf, #303b2d);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+}
+
+/* ---- Recipe rows ---- */
+
+.recipe-list {
+  display: grid;
+  gap: 10px;
+}
+
+.recipe-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: light-dark(#f6f6f0, #222720);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.recipe-row > div:nth-child(2) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.recipe-icon {
+  width: 45px;
+  height: 45px;
+  border-radius: 14px;
+  background: light-dark(#e5eadc, #354333);
+  display: grid;
+  place-items: center;
+  font-size: 23px;
+  flex-shrink: 0;
+}
+
+.recipe-row h3 {
+  font-size: 14px;
+  margin: 0 0 5px;
+}
+
+.recipe-row p {
+  font-size: 12px;
+  margin: 0;
+  color: light-dark(#74796f, #a0a89e);
+}
+
+.arrow {
+  margin-left: auto;
+  color: light-dark(#777e72, #a3aca0);
+  font-size: 21px;
+}
+
+/* ---- Shopping list and ingredient rows ---- */
+
+.checkrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 13px 0;
+  border-bottom: 1px solid light-dark(#ecece5, #30362f);
+  font-size: 13px;
+}
+
+.checkrow:last-child {
+  border: 0;
+}
+
+.checkrow input {
+  accent-color: #496548;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+
+.checkrow.checked .checktext {
+  text-decoration: line-through;
+  color: light-dark(#8b9186, #778073);
+}
+
+.qty {
+  margin-left: auto;
+  color: light-dark(#777d73, #a3aba0);
+  font-size: 11px;
+  text-align: right;
+}
+
+/* ---- Cooking timeline ---- */
+
+.timeline {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 0 9px;
+}
+
+.time {
+  font-size: 12px;
+  font-weight: 750;
+  color: light-dark(#496548, #b9d8ae);
+  padding: 14px 0;
+}
+
+.timeitem {
+  border-left: 2px solid light-dark(#d9e2d2, #394d35);
+  padding: 12px 0 16px 13px;
+  position: relative;
+  min-width: 0;
+}
+
+.timeitem::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 17px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6c8b61;
+}
+
+.timeitem strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.timeitem p {
+  font-size: 12px;
+  color: light-dark(#747a70, #a2aaa0);
+  line-height: 1.5;
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Very narrow phones ---- */
+
+@media (max-width: 380px) {
+  .main {
+    padding-left: 11px;
+    padding-right: 11px;
+  }
+
+  .stats {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .stat {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+  }
+
+  .stat .label {
+    margin-top: 0;
+    font-size: 11px;
+  }
+
+  .top-actions .primary {
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+
+  .brand {
+    font-size: 16px;
+  }
+
+  .mobile-nav button {
+    font-size: 9px;
+  }
+}
+
+/* ---- Wide screens (tablets, landscape, desktop browsers): centre the phone layout ---- */
+
+@media (min-width: 761px) {
+  body {
+    background: light-dark(#e8e9e3, #0b0d0b);
+  }
+
+  .app {
+    max-width: 430px;
+    margin: 0 auto;
+    box-shadow: 0 0 0 1px #d8dbd1, 0 12px 50px #0002;
+    position: relative;
+  }
+
+  .mobile-nav {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 430px;
+  }
+}
