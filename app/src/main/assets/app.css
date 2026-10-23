@@ -636,6 +636,13 @@ textarea.field {
   color: light-dark(#8b9186, #778073);
 }
 
+.recipe-link {
+  text-decoration: underline;
+  text-decoration-color: light-dark(#c3c9bc, #4c5649);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
 .qty {
   margin-left: auto;
   color: light-dark(#777d73, #a3aba0);

@@ -358,8 +358,9 @@ const sampleExport = JSON.stringify(SAMPLE_EXPORT, null, 2);
 // ---- AI handoff: what ChatGPT / Claude are told ----
 
 // The mealkeeper-v1 format written for an AI. The skeleton is valid JSON (tests check the importer accepts it).
-// It asks for a code block because both apps put a Copy button on code blocks.
-const EXPORT_FORMAT = `Reply with ONLY one JSON code block, no other text, in this format:
+// It asks for a code block because both apps put a Copy button on code blocks, compact JSON because it streams
+// faster, and a closing "Ready" line because the Copy button appears before the block is finished.
+const EXPORT_FORMAT = `Reply with one compact JSON code block (no indentation) in this format, then the line "✅ Ready to copy". No other text.
 
 {"format": "mealkeeper-v1", "meals": [{
   "mealkeeper_id": null, "name": "…", "description": "…", "servings": 4, "total_time": "1 hr 15 min",
@@ -379,7 +380,7 @@ Rules:
 - Quantities are numbers (1.5, not "1 1/2"); use null if unknown, don't guess.
 - Merge duplicate shopping items; "category" is the store section; "used_in" lists recipe ids.
 - start_offset_minutes counts from when cooking starts. Order the timeline so every dish is ready at serving time, including preheating and resting.
-- If the meal came from Prompt to Pan with a mealkeeper_id, keep it unchanged.`;
+- Keep any existing mealkeeper_id unchanged.`;
 
 // Standing instructions for a ChatGPT or Claude project, so the user can just say "send it to the pan".
 const AI_SETUP_INSTRUCTIONS = `I cook the meals I plan with you using an app called Prompt to Pan. Brainstorm and refine meals with me as usual. When I say "send it to the pan", turn the meal we've settled on into the Prompt to Pan format.
@@ -583,8 +584,18 @@ window.handleBack = function() {
     return true
   }
   if (navStack.length) {
-    page = navStack.pop();
-    render();
+    let back = navStack.pop();
+    if (typeof back === 'object') {
+      // Came here from a recipe (see openFromRecipe): go back to its meal and reopen it.
+      page = back.page;
+      selectedMeal = back.meal;
+      mealTab = back.tab;
+      render();
+      showRecipe(back.recipe);
+    } else {
+      page = back;
+      render();
+    }
     window.scrollTo({
       top: 0
     });
@@ -601,12 +612,12 @@ window.handleBack = function() {
   return false
 };
 
-function notify(s) {
+function notify(s, ms = 2500) {
   let t = document.getElementById('toast');
   t.textContent = s;
   t.style.display = 'block';
   clearTimeout(window._toast);
-  window._toast = setTimeout(() => t.style.display = 'none', 2500)
+  window._toast = setTimeout(() => t.style.display = 'none', ms)
 }
 
 // centered: show mid-screen instead of as a bottom sheet (see offerImport).
@@ -657,29 +668,44 @@ function showRecipe(i) {
     ['Total', r.time],
     ['Serves', str(r.servings || '')]
   ].filter(f => f[1]);
-  openModal(`<div class="eyebrow">${escapeHtml(m.name)}</div><h2>${escapeHtml(r.icon)} ${escapeHtml(r.title)}</h2>${r.course?`<p class="subhead" style="margin-bottom:10px">${escapeHtml(r.course)}</p>`:''}${facts.length?`<div class="muted small" style="margin-bottom:14px">${facts.map(f=>`${f[0]}: <strong>${escapeHtml(f[1])}</strong>`).join(' &nbsp;·&nbsp; ')}</div>`:''}${r.ingredients.length?`<div class="panel"><strong>Ingredients</strong>${r.ingredients.map(x=>`<div class="checkrow"><span>${escapeHtml(x.name)}${x.notes?` <span class="muted small">(${escapeHtml(x.notes)})</span>`:''}</span><span class="qty">${escapeHtml(fmtQty(x.quantity,x.unit))}</span></div>`).join('')}</div>`:''}${r.instructions.length?`<div class="panel"><strong>Instructions</strong><ol style="padding-left:20px;margin:10px 0 0;line-height:1.6;font-size:14px">${r.instructions.map(s=>`<li style="margin-bottom:8px">${escapeHtml(s)}</li>`).join('')}</ol></div>`:''}${r.ingredients.length||r.instructions.length?'':`<div class="panel"><p class="muted small" style="line-height:1.6;margin:0">No ingredients or steps are saved for this recipe. Send the meal from ChatGPT or Claude to get the full recipe.</p></div>`}${r.makeAhead?`<div class="panel"><strong>Make ahead</strong><p class="muted small" style="line-height:1.6;margin-bottom:0">${escapeHtml(r.makeAhead)}</p></div>`:''}${r.source?`<p class="muted small">Source: ${escapeHtml(r.source)}</p>`:''}<div class="modal-foot"><button class="secondary" onclick="askAbout('recipe',${i})">✧ Ask AI</button><button class="secondary" onclick="closeModal();go('shopping')">Shopping list</button><button class="primary" onclick="closeModal()">Done</button></div>`)
+  openModal(`<div class="eyebrow">${escapeHtml(m.name)}</div><h2>${escapeHtml(r.icon)} ${escapeHtml(r.title)}</h2>${r.course?`<p class="subhead" style="margin-bottom:10px">${escapeHtml(r.course)}</p>`:''}${facts.length?`<div class="muted small" style="margin-bottom:14px">${facts.map(f=>`${f[0]}: <strong>${escapeHtml(f[1])}</strong>`).join(' &nbsp;·&nbsp; ')}</div>`:''}${r.ingredients.length?`<div class="panel"><strong>Ingredients</strong>${r.ingredients.map(x=>`<div class="checkrow"><span>${escapeHtml(x.name)}${x.notes?` <span class="muted small">(${escapeHtml(x.notes)})</span>`:''}</span><span class="qty">${escapeHtml(fmtQty(x.quantity,x.unit))}</span></div>`).join('')}</div>`:''}${r.instructions.length?`<div class="panel"><strong>Instructions</strong><ol style="padding-left:20px;margin:10px 0 0;line-height:1.6;font-size:14px">${r.instructions.map(s=>`<li style="margin-bottom:8px">${escapeHtml(s)}</li>`).join('')}</ol></div>`:''}${r.ingredients.length||r.instructions.length?'':`<div class="panel"><p class="muted small" style="line-height:1.6;margin:0">No ingredients or steps are saved for this recipe. Send the meal from ChatGPT or Claude to get the full recipe.</p></div>`}${r.makeAhead?`<div class="panel"><strong>Make ahead</strong><p class="muted small" style="line-height:1.6;margin-bottom:0">${escapeHtml(r.makeAhead)}</p></div>`:''}${r.source?`<p class="muted small">Source: ${escapeHtml(r.source)}</p>`:''}<div class="modal-foot"><button class="secondary" onclick="askAbout('recipe',${i})">✧ Ask AI</button><button class="secondary" onclick="openFromRecipe(${i},'shopping')">Shopping list</button><button class="primary" onclick="closeModal()">Done</button></div>`)
+}
+
+function showRecipeTitled(title) {
+  let m = currentMeal(), i = m ? m.recipes.findIndex(r => r.title === title) : -1;
+  if (i >= 0) showRecipe(i);
+}
+
+// Opens the shopping list or timeline from a recipe, so Back (and the link at the top) reopens that recipe.
+function openFromRecipe(i, p) {
+  closeModal();
+  if (page === p) return;
+  navStack.push({page, recipe: i, meal: currentMeal().id, tab: mealTab});
+  page = p;
+  render();
+  window.scrollTo({top: 0});
 }
 
 function shoppingPage(embedded = false) {
   let m = currentMeal(),
-    head = embedded ? '' : `<div class="eyebrow">READY FOR THE STORE</div><h1 class="headline">Shopping list</h1><p class="subhead">One consolidated list for the whole meal. Check items off as you shop.</p>${mealPicker(m)}`;
+    head = embedded ? '' : `${backLink()}<div class="eyebrow">READY FOR THE STORE</div><h1 class="headline">Shopping list</h1><p class="subhead">One consolidated list for the whole meal. Check items off as you shop.</p>${mealPicker(m)}`;
   if (!m || !m.shopping.length) return head + emptyPanel('☷', 'No shopping list yet', 'Send this meal from ChatGPT or Claude to get a combined shopping list.');
   let list = m.shopping,
     done = list.filter(x => x.checked).length,
     groups = [...new Set(list.map(x => x.group))];
-  return `${head}<div class="panel"><div class="spread"><div><strong>${list.length-done} items left</strong><div class="muted small" style="margin-top:4px">${done} of ${list.length} checked</div></div><div class="actions"><button class="outline" onclick="clearChecks()">Uncheck all</button><button class="secondary" onclick="copyList()">Copy list</button></div></div><div style="height:6px;background:light-dark(#e7e9e0,#30372f);border-radius:9px;margin-top:15px;overflow:hidden"><div style="height:100%;width:${done/list.length*100}%;background:#66845b"></div></div></div>${groups.map(g=>`<div class="panel"><div class="spread"><h3 style="font-size:15px;margin:0">${escapeHtml(g)}</h3><span class="muted small">${list.filter(x=>x.group===g).length} items</span></div>${list.map((x,i)=>({...x,i})).filter(x=>x.group===g).map(x=>`<label class="checkrow ${x.checked?'checked':''}"><input type="checkbox" ${x.checked?'checked':''} onchange="toggleItem(${x.i},this.checked)"><span><span class="checktext">${escapeHtml(x.name)}</span>${x.usedIn.length?`<span class="muted small" style="display:block;margin-top:3px">for ${escapeHtml(x.usedIn.join(', '))}</span>`:''}</span><span class="qty">${escapeHtml(x.qty)}</span></label>`).join('')}</div>`).join('')}`;
+  return `${head}<div class="panel"><div class="spread"><div><strong>${list.length-done} items left</strong><div class="muted small" style="margin-top:4px">${done} of ${list.length} checked</div></div><div class="actions"><button class="outline" onclick="clearChecks()">Uncheck all</button><button class="secondary" onclick="copyList()">Copy list</button></div></div><div style="height:6px;background:light-dark(#e7e9e0,#30372f);border-radius:9px;margin-top:15px;overflow:hidden"><div style="height:100%;width:${done/list.length*100}%;background:#66845b"></div></div></div>${groups.map(g=>`<div class="panel"><div class="spread"><h3 style="font-size:15px;margin:0">${escapeHtml(g)}</h3><span class="muted small">${list.filter(x=>x.group===g).length} items</span></div>${list.map((x,i)=>({...x,i})).filter(x=>x.group===g).map(x=>`<label class="checkrow ${x.checked?'checked':''}"><input type="checkbox" ${x.checked?'checked':''} onchange="toggleItem(${x.i},this.checked)"><span><span class="checktext">${escapeHtml(x.name)}</span>${x.usedIn.length?`<span class="muted small" style="display:block;margin-top:3px">for ${x.usedIn.map(recipeLink).join(', ')}</span>`:''}</span><span class="qty">${escapeHtml(x.qty)}</span></label>`).join('')}</div>`).join('')}`;
 }
 
 // Timeline offsets count from when cooking starts, so the start time is worked back from the serving time.
 function timelinePage(embedded = false) {
   let m = currentMeal(),
-    head = embedded ? '' : `<div class="eyebrow">COOKING MODE</div><h1 class="headline">Cooking timeline</h1><p class="subhead">A coordinated order of operations so courses finish at the right time.</p>${mealPicker(m)}`;
+    head = embedded ? '' : `${backLink()}<div class="eyebrow">COOKING MODE</div><h1 class="headline">Cooking timeline</h1><p class="subhead">A coordinated order of operations so courses finish at the right time.</p>${mealPicker(m)}`;
   if (!m || !m.timeline.length) return head + emptyPanel('◷', 'No cooking timeline yet', 'Send this meal from ChatGPT or Claude to get a coordinated cooking order.');
   let span = timelineSpan(m.timeline),
     serve = clockMinutes(m.serveAt),
     start = serve - span,
     titleOf = id => (m.recipes.find(r => r.id === id) || {}).title;
-  return `${head}<div class="panel"><div class="spread"><div><strong>${escapeHtml(m.name)}</strong><div class="muted small" style="margin-top:4px">Start at ${fmtClock(start)} · serve at ${fmtClock(serve)} · ${fmtMinutes(span)} total</div></div><span class="badge">${m.recipes.length} recipes</span></div><label class="field-label">Target serving time</label><input class="field" type="time" value="${escapeHtml(m.serveAt)}" onchange="setServeAt(this.value)"></div><div class="panel"><div class="timeline">${m.timeline.map((t,i)=>`<div class="time">${fmtClock(start+t.offset)}</div><div class="timeitem"><strong>${escapeHtml(t.task)}</strong>${t.duration?` <span class="muted small">· ${fmtMinutes(t.duration)}</span>`:''}${titleOf(t.recipeId)?`<div class="muted small" style="margin-top:3px">${escapeHtml(titleOf(t.recipeId))}</div>`:''}${t.details?`<p>${escapeHtml(t.details)}</p>`:''}<button class="text-btn" style="font-size:12px;padding:6px 0 0" onclick="askAbout('step',${i})">✧ Ask AI about this step</button></div>`).join('')}<div class="time">${fmtClock(serve)}</div><div class="timeitem"><strong>Serve</strong><p>Everything should be ready now.</p></div></div><div class="divider"></div><div class="spread"><span class="muted small">${awake||cookAwake?'Your screen stays on while this timeline is open.':'Your screen may sleep while you cook.'}</span><button class="secondary" onclick="go('settings')">Configure</button></div></div>`
+  return `${head}<div class="panel"><div class="spread"><div><strong>${escapeHtml(m.name)}</strong><div class="muted small" style="margin-top:4px">Start at ${fmtClock(start)} · serve at ${fmtClock(serve)} · ${fmtMinutes(span)} total</div></div><span class="badge">${m.recipes.length} recipes</span></div><label class="field-label">Target serving time</label><input class="field" type="time" value="${escapeHtml(m.serveAt)}" onchange="setServeAt(this.value)"></div><div class="panel"><div class="timeline">${m.timeline.map((t,i)=>`<div class="time">${fmtClock(start+t.offset)}</div><div class="timeitem"><strong>${escapeHtml(t.task)}</strong>${t.duration?` <span class="muted small">· ${fmtMinutes(t.duration)}</span>`:''}${titleOf(t.recipeId)?`<div class="muted small" style="margin-top:3px">${recipeLink(titleOf(t.recipeId))}</div>`:''}${t.details?`<p>${escapeHtml(t.details)}</p>`:''}<button class="text-btn" style="font-size:12px;padding:6px 0 0" onclick="askAbout('step',${i})">✧ Ask AI about this step</button></div>`).join('')}<div class="time">${fmtClock(serve)}</div><div class="timeitem"><strong>Serve</strong><p>Everything should be ready now.</p></div></div><div class="divider"></div><div class="spread"><span class="muted small">${awake||cookAwake?'Your screen stays on while this timeline is open.':'Your screen may sleep while you cook.'}</span><button class="secondary" onclick="go('settings')">Configure</button></div></div>`
 }
 
 function aiPage() {
@@ -701,6 +727,21 @@ ${step('↗', 'Or share it', 'Long-press the reply, tap <strong>Share</strong>, 
 
 function settingsPage() {
   return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Prompt to Pan is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a meal export from ChatGPT, Claude or another AI.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up ChatGPT or Claude to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in ChatGPT or Claude and come back, Prompt to Pan offers to import it. Android shows a notice each time it checks a new copy.</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>`
+}
+
+// The link back from the shopping list or timeline: to the recipe the user came from, or else to the meal.
+function backLink() {
+  let from = navStack[navStack.length - 1], m = currentMeal(), r;
+  if (from && typeof from === 'object') r = (meals.find(x => x.id === from.meal) || {recipes: []}).recipes[from.recipe];
+  if (r) return `<button class="text-btn" onclick="handleBack()">← ${escapeHtml(r.title)}</button><div style="height:15px"></div>`;
+  if (!m) return '';
+  return `<button class="text-btn" onclick="${from === 'meal' ? 'handleBack()' : `openMeal(${m.id})`}">← ${escapeHtml(m.name)}</button><div style="height:15px"></div>`;
+}
+
+// A recipe name that opens the recipe over the current screen. It sits inside a shopping-list <label>, so it
+// stops the click from also ticking the item.
+function recipeLink(title) {
+  return `<span class="recipe-link" onclick="event.preventDefault();event.stopPropagation();showRecipeTitled(this.textContent)">${escapeHtml(title)}</span>`;
 }
 
 function mealPicker(m) {
@@ -757,7 +798,7 @@ function doImport() {
     if (!parsed.meals.some(existingMealFor)) importMeals(parsed);
     else offerImport(v, 'PASTED');
   } else {
-    notify(parsed === null ? 'Couldn\'t find valid JSON in that text. Make sure you copied the whole AI response.' : 'That JSON has no meals in it. Check it follows the mealkeeper-v1 format.')
+    notify(parsed !== null ? 'That JSON has no meals in it. Check it follows the mealkeeper-v1 format.' : looksLikeUnfinishedExport(v) ? 'That looks unfinished. Wait until the AI shows “✅ Ready to copy”, then copy and paste it again.' : 'Couldn\'t find a meal in that text. Make sure you copied the whole AI reply.', 6000)
   }
 }
 
@@ -826,8 +867,14 @@ window.receiveSharedText = function(text) {
 // MainActivity calls this when the app comes back to the front with a new copy that looks like a meal export.
 window.receiveClipboardText = function(text) {
   if (!clipOffer || document.getElementById('modal-bg').style.display === 'flex') return;
-  offerImport(text, 'FROM YOUR CLIPBOARD');
+  if (offerImport(text, 'FROM YOUR CLIPBOARD')) return;
+  // Copied while the AI was still writing: the start of an export, but not complete JSON yet.
+  if (looksLikeUnfinishedExport(text)) notify('That copy looks unfinished. Wait until the AI shows “✅ Ready to copy”, then copy it again.', 6000);
 };
+
+function looksLikeUnfinishedExport(text) {
+  return /"format"\s*:\s*"mealkeeper-v1"|"meals"\s*:\s*\[/.test(text || '');
+}
 
 function toggleItem(i, v) {
   let m = currentMeal();
@@ -947,7 +994,7 @@ function reviseMeal() {
     'e.g. make it vegetarian', ['Make it vegetarian', `Serve ${m.servings * 2} instead of ${m.servings}`, 'Make it quicker for a weeknight', 'Add a dessert'],
     request => `Here's a meal from my Prompt to Pan app. ${request || 'I want to change it. Ask me what I have in mind.'}
 
-Talk it through with me if you need to. When the new version is ready (or when I say "send it to the pan"), reply with ONLY one JSON code block in the same format, keeping "mealkeeper_id" unchanged so Prompt to Pan updates the meal instead of adding a copy. Update the shopping list and timeline to match.
+Talk it through with me if you need to. When the new version is ready (or when I say "send it to the pan"), reply with one compact JSON code block in the same format, then the line "✅ Ready to copy", keeping "mealkeeper_id" unchanged so Prompt to Pan updates the meal instead of adding a copy. Update the shopping list and timeline to match.
 
 ${json}`);
 }

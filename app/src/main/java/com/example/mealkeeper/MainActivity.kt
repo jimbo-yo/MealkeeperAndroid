@@ -318,7 +318,16 @@ class MainActivity : Activity() {
             // NEW_TASK: otherwise the AI app's screen joins this app's task, and returning here shows it again.
             val share = Intent(Intent.ACTION_SEND).setPackage(app.packageName).setType("text/plain")
                 .putExtra(Intent.EXTRA_TEXT, text).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            if (share.resolveActivity(packageManager) != null && startOther(share)) {
+            if (share.resolveActivity(packageManager) == null) return if (launchAiApp(ai)) "opened" else "missing"
+            if (!app.shareFillsMessageBox) {
+                // Claude sometimes opens with an empty message box (seen when it was already open in the background),
+                // so the prompt goes on the clipboard too, with a toast that stays visible over Claude.
+                runOnUiThread {
+                    copyToClipboard(text)
+                    Toast.makeText(this@MainActivity, "Prompt copied. If the message box is empty, paste it.", Toast.LENGTH_LONG).show()
+                }
+            }
+            if (startOther(share)) {
                 checkAiAppOpened(ai, text)
                 return "shared"
             }
@@ -375,12 +384,12 @@ class MainActivity : Activity() {
         private const val MAX_CLIP_CHARS = 500_000
         // The page refers to the AI apps by these keys; the packages are also listed under <queries> in the manifest.
         private val AI_APPS = mapOf(
-            "chatgpt" to AiApp("com.openai.chatgpt", "ChatGPT"),
-            "claude" to AiApp("com.anthropic.claude", "Claude")
+            "chatgpt" to AiApp("com.openai.chatgpt", "ChatGPT", shareFillsMessageBox = true),
+            "claude" to AiApp("com.anthropic.claude", "Claude", shareFillsMessageBox = false)
         )
         private const val AI_LAUNCH_CHECK_MS = 2500L
         private const val CLIP_OFFER_DELAY_MS = 1000L
     }
 }
 
-private class AiApp(val packageName: String, val name: String)
+private class AiApp(val packageName: String, val name: String, val shareFillsMessageBox: Boolean)

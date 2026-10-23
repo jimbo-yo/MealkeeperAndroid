@@ -242,6 +242,56 @@ test('back from a page with no history goes home', () => {
   eq([handleBack(), page], [true, 'home']);
 });
 
+test('the shopping list links back to the recipe it was opened from', () => {
+  openMeal(1);
+  showRecipe(1);
+  modal().querySelector('[onclick^="openFromRecipe"]').click();
+  eq([page, modalOpen()], ['shopping', false]);
+  let back = main().querySelector('.text-btn');
+  eq(back.textContent, '← Sausage & pepper rigatoni');
+  back.click();
+  eq([page, modalOpen()], ['meal', true]);
+  assert(modal().textContent.includes('Sausage & pepper rigatoni'), 'recipe not reopened');
+});
+
+test('Android back from the shopping list also reopens the recipe', () => {
+  openMeal(1);
+  showRecipe(0);
+  openFromRecipe(0, 'shopping');
+  eq([handleBack(), page, modalOpen()], [true, 'meal', true]);
+  assert(modal().textContent.includes('Roasted tomato bruschetta'));
+});
+
+test('from a meal, the shopping list and timeline link back to the meal', () => {
+  openMeal(1);
+  go('timeline');
+  let back = main().querySelector('.text-btn');
+  eq(back.textContent, '← Sunday Italian supper');
+  back.click();
+  eq(page, 'meal');
+  go('home');
+  go('shopping');
+  main().querySelector('.text-btn').click();
+  eq([page, selectedMeal], ['meal', 1], 'opens the meal even when you came from elsewhere');
+});
+
+test('recipe names on the shopping list open the recipe without ticking the item', () => {
+  go('shopping');
+  let item = [...main().querySelectorAll('.checkrow')].find(r => r.textContent.includes('Ricotta cheese'));
+  item.querySelector('.recipe-link').click();
+  assert(modalOpen() && modal().textContent.includes('Lemon ricotta cups'), 'recipe not shown');
+  eq(meals[0].shopping.find(x => x.name === 'Ricotta cheese').checked, false);
+  eq(page, 'shopping', 'stays on the list underneath');
+  modal().querySelector('[onclick^="openFromRecipe"]').click();
+  eq([page, modalOpen()], ['shopping', false], '"Shopping list" just closes the recipe');
+});
+
+test('recipe names on the timeline open the recipe', () => {
+  go('timeline');
+  main().querySelector('.recipe-link').click();
+  assert(modal().textContent.includes('Sausage & pepper rigatoni'));
+});
+
 // ---- Saving, backups and restore ----
 
 test('every change is saved and loads back', () => {
@@ -365,6 +415,22 @@ test('"Not now" leaves everything as it was', () => {
   receiveClipboardText(sampleExport);
   modal().querySelector('.outline').click();
   eq([meals.length, modalOpen(), pendingImport], [4, false, null]);
+});
+
+test('a meal copied before the AI finished writing gets a hint, not silence', () => {
+  receiveClipboardText(sampleExport.slice(0, 900));
+  eq(modalOpen(), false);
+  assert(document.getElementById('toast').textContent.includes('unfinished'), document.getElementById('toast').textContent);
+  importViaDialog(sampleExport.slice(0, 900));
+  assert(document.getElementById('toast').textContent.includes('Ready to copy'), 'paste hint');
+});
+
+test('the AI is asked to say when the JSON is complete', () => {
+  assert(EXPORT_FORMAT.includes('"✅ Ready to copy"'), 'export format');
+  openMeal(1);
+  reviseMeal();
+  sendToAi('claude');
+  assert(bridge.calls.filter(c => c[0] === 'sendToAiApp').pop()[2].includes('"✅ Ready to copy"'), 'revise prompt');
 });
 
 test('copied text that isn\'t a meal is ignored', () => {
