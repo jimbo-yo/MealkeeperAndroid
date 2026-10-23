@@ -1,4 +1,4 @@
-/* Mealkeeper styles. The app always uses its phone layout; wider screens show it as a centred column.
+/* Prompt to Pan styles. The app always uses its phone layout; wider screens show it as a centred column.
    Colours use light-dark(), which follows the system theme (on Android, via Theme.Mealkeeper's night variant).
    MainActivity sets --android-safe-top / --android-safe-bottom to the status- and navigation-bar heights. */
 

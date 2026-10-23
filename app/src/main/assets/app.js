@@ -1,4 +1,6 @@
-// Mealkeeper single-page app. Runs in the Android WebView (MainActivity) and in a normal browser.
+// Prompt to Pan single-page app. Runs in the Android WebView (MainActivity) and in a normal browser.
+// The app was called Mealkeeper; internal names (mealkeeper-v1, mealkeeper_id, storage keys, MealkeeperAndroid)
+// keep that name so saved data, backups and earlier AI exports still work.
 // Android-only features go through window.MealkeeperAndroid; MainActivity calls back into the window.* functions below.
 
 // ---- State ----
@@ -377,15 +379,15 @@ Rules:
 - Quantities are numbers (1.5, not "1 1/2"); use null if unknown, don't guess.
 - Merge duplicate shopping items; "category" is the store section; "used_in" lists recipe ids.
 - start_offset_minutes counts from when cooking starts. Order the timeline so every dish is ready at serving time, including preheating and resting.
-- If the meal came from Mealkeeper with a mealkeeper_id, keep it unchanged.`;
+- If the meal came from Prompt to Pan with a mealkeeper_id, keep it unchanged.`;
 
-// Standing instructions for a ChatGPT or Claude project, so the user can just say "send it to Mealkeeper".
-const AI_SETUP_INSTRUCTIONS = `I cook the meals I plan with you using an app called Mealkeeper. Brainstorm and refine meals with me as usual. When I say "send it to Mealkeeper", turn the meal we've settled on into the Mealkeeper format.
+// Standing instructions for a ChatGPT or Claude project, so the user can just say "send it to the pan".
+const AI_SETUP_INSTRUCTIONS = `I cook the meals I plan with you using an app called Prompt to Pan. Brainstorm and refine meals with me as usual. When I say "send it to the pan", turn the meal we've settled on into the Prompt to Pan format.
 
 ${EXPORT_FORMAT}`;
 
 // For a chat that wasn't set up: pasted at the end, it sends that chat's meal.
-const ONE_OFF_PROMPT = `Send the meal we've planned in this conversation to my Mealkeeper app. If we haven't planned one yet, suggest a complete meal first.
+const ONE_OFF_PROMPT = `Send the meal we've planned in this conversation to my Prompt to Pan app. If we haven't planned one yet, suggest a complete meal first.
 
 ${EXPORT_FORMAT}`;
 
@@ -454,7 +456,7 @@ function applyState(s) {
 }
 
 function exportBackup() {
-  let name = `mealkeeper-backup-${new Date().toISOString().slice(0,10)}.json`,
+  let name = `prompt-to-pan-backup-${new Date().toISOString().slice(0,10)}.json`,
     data = JSON.stringify({
       format: BACKUP_FORMAT,
       exported_at: new Date().toISOString(),
@@ -506,7 +508,7 @@ window.receiveBackupFile = function(text) {
   } else if (o && o.meals && o.meals.length) {
     offerImport(text, 'FROM A FILE')
   } else {
-    notify('That file isn\'t a Mealkeeper backup or recipe export.')
+    notify('That file isn\'t a Prompt to Pan backup or recipe export.')
   }
 };
 
@@ -683,14 +685,14 @@ function timelinePage(embedded = false) {
 function aiPage() {
   let guide = AI_GUIDES[aiTab],
     step = (n, title, body) => `<div class="row" style="align-items:flex-start;margin-bottom:12px"><div class="recipe-icon" style="width:38px;height:38px;font-size:16px">${n}</div><div><strong>${title}</strong><div class="muted small" style="margin-top:4px;line-height:1.5">${body}</div></div></div>`;
-  return `<div class="eyebrow">PLAN WITH YOUR AI</div><h1 class="headline">Brainstorm there, cook here</h1><p class="subhead">Plan meals with ChatGPT or Claude the way you normally would. When you're happy, say <strong>“send it to Mealkeeper”</strong> and the meal comes here with its recipes, shopping list and cooking timeline.</p>
+  return `<div class="eyebrow">PLAN WITH YOUR AI</div><h1 class="headline">Brainstorm there, cook here</h1><p class="subhead">Plan meals with ChatGPT or Claude the way you normally would. When you're happy, say <strong>“send it to the pan”</strong> and the meal comes here with its recipes, shopping list and cooking timeline.</p>
 <div class="panel">${step('1', 'Set up your AI once', 'Give it standing instructions, so you never have to paste a prompt into a chat.')}
 <div class="tabs" style="margin-top:4px">${Object.entries(AI_GUIDES).map(([k, g]) => `<button class="tab ${k === aiTab ? 'active' : ''}" onclick="aiTab='${k}';render()">${g.name}</button>`).join('')}</div>
 <ol style="padding-left:20px;margin:0 0 14px;line-height:1.6;font-size:14px">${guide.steps.map(x => `<li style="margin-bottom:6px">${x}</li>`).join('')}</ol>
 <div class="actions"><button class="primary" onclick="copySetup()">▣ Copy instructions</button><button class="secondary" onclick="openAi(aiTab)">Open ${guide.name} ↗</button></div>
 <details style="margin-top:14px"><summary class="muted small">Show the instructions</summary><textarea class="field" rows="12" readonly style="margin-top:10px">${escapeHtml(AI_SETUP_INSTRUCTIONS)}</textarea></details></div>
-<div class="panel">${step('2', 'Plan, then send it here', `When the meal is right, say “send it to Mealkeeper”. Tap <strong>Copy</strong> on the code block it replies with, then come back here. ${clipOffer ? 'Mealkeeper will offer to import it.' : 'Then tap Import and paste it. (Turn on “Offer to import copied meals” in Settings to skip this.)'}`)}
-${step('↗', 'Or share it', 'Long-press the reply, tap <strong>Share</strong>, and pick Mealkeeper.')}
+<div class="panel">${step('2', 'Plan, then send it here', `When the meal is right, say “send it to the pan”. Tap <strong>Copy</strong> on the code block it replies with, then come back here. ${clipOffer ? 'Prompt to Pan will offer to import it.' : 'Then tap Import and paste it. (Turn on “Offer to import copied meals” in Settings to skip this.)'}`)}
+${step('↗', 'Or share it', 'Long-press the reply, tap <strong>Share</strong>, and pick Prompt to Pan.')}
 <button class="secondary" onclick="openImport()">↥ Import manually</button></div>
 <div class="panel"><strong>Not set up yet?</strong><p class="muted small" style="line-height:1.5;margin:6px 0 12px">Paste this prompt at the end of any chat to send that meal over.</p>
 <div class="actions"><button class="secondary" onclick="copyPrompt()">▣ Copy prompt</button><button class="secondary" onclick="sharePrompt()">☍ Share prompt</button></div>
@@ -698,7 +700,7 @@ ${step('↗', 'Or share it', 'Long-press the reply, tap <strong>Share</strong>, 
 }
 
 function settingsPage() {
-  return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Mealkeeper is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a Mealkeeper JSON export generated by an AI assistant.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up ChatGPT or Claude to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in ChatGPT or Claude and come back, Mealkeeper offers to import it. Android shows a notice each time it checks a new copy.</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>`
+  return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Prompt to Pan is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a meal export from ChatGPT, Claude or another AI.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up ChatGPT or Claude to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in ChatGPT or Claude and come back, Prompt to Pan offers to import it. Android shows a notice each time it checks a new copy.</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>`
 }
 
 function mealPicker(m) {
@@ -814,14 +816,14 @@ function confirmImport(mode) {
 }
 
 window.receiveSharedText = function(text) {
-  if (!text || offerImport(text, 'SHARED WITH MEALKEEPER')) return;
+  if (!text || offerImport(text, 'SHARED WITH PROMPT TO PAN')) return;
   importText = text;
   go('home');
   openImport();
   notify('Shared text loaded. Check it, then import.');
 };
 
-// MainActivity calls this when Mealkeeper comes back to the front with a new copy that looks like a meal export.
+// MainActivity calls this when the app comes back to the front with a new copy that looks like a meal export.
 window.receiveClipboardText = function(text) {
   if (!clipOffer || document.getElementById('modal-bg').style.display === 'flex') return;
   offerImport(text, 'FROM YOUR CLIPBOARD');
@@ -943,9 +945,9 @@ function reviseMeal() {
   let json = JSON.stringify({format: 'mealkeeper-v1', meals: [toV1Meal(m)]});
   aiModal('REVISE WITH AI', `Change “${m.name}”`, 'Say what to change. Your AI gets the whole meal. When it replies with the new version, copy it and come back to update the meal here.',
     'e.g. make it vegetarian', ['Make it vegetarian', `Serve ${m.servings * 2} instead of ${m.servings}`, 'Make it quicker for a weeknight', 'Add a dessert'],
-    request => `Here's a meal from my Mealkeeper app. ${request || 'I want to change it. Ask me what I have in mind.'}
+    request => `Here's a meal from my Prompt to Pan app. ${request || 'I want to change it. Ask me what I have in mind.'}
 
-Talk it through with me if you need to. When the new version is ready (or when I say "send it to Mealkeeper"), reply with ONLY one JSON code block in the same format, keeping "mealkeeper_id" unchanged so Mealkeeper updates the meal instead of adding a copy. Update the shopping list and timeline to match.
+Talk it through with me if you need to. When the new version is ready (or when I say "send it to the pan"), reply with ONLY one JSON code block in the same format, keeping "mealkeeper_id" unchanged so Prompt to Pan updates the meal instead of adding a copy. Update the shopping list and timeline to match.
 
 ${json}`);
 }
@@ -978,7 +980,7 @@ function askAbout(kind, i) {
   }
   aiModal('ASK YOUR AI', `Ask about “${title}”`, 'Your AI gets the recipe, so you can ask it anything while you cook.',
     'e.g. what can I use instead of ricotta?', ['What can I substitute?', 'How do I know it\'s done?', 'Can I make this ahead?', 'Something went wrong. Help!'],
-    question => `I'm cooking from my Mealkeeper app right now, so keep your answer short and practical.
+    question => `I'm cooking from my Prompt to Pan app right now, so keep your answer short and practical.
 
 ${question || 'I have a question about this.'}
 
@@ -988,7 +990,7 @@ ${context}`, after);
 function setClipOffer(v) {
   clipOffer = v;
   render();
-  notify(v ? 'Mealkeeper will offer to import meals you copy' : 'Copied meals won\'t be offered')
+  notify(v ? 'Prompt to Pan will offer to import meals you copy' : 'Copied meals won\'t be offered')
 }
 
 function syncClipOffer() {
@@ -1000,7 +1002,7 @@ function syncClipOffer() {
 function setAwake(v) {
   awake = v;
   render();
-  notify(v ? 'Screen will stay on while Mealkeeper is open' : 'Screen can sleep normally')
+  notify(v ? 'Screen will stay on while Prompt to Pan is open' : 'Screen can sleep normally')
 }
 
 function setCookAwake(v) {

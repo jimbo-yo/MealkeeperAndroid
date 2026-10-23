@@ -117,7 +117,7 @@ class MainActivity : Activity() {
     // When the user copies a meal in ChatGPT or Claude and comes back, hand it to the page to offer an import.
     // Android only lets the focused app read the clipboard and shows a "pasted" notice on each read, so read
     // only clips we haven't seen (the description and its timestamp can be checked without reading), skip
-    // ones marked sensitive, and pass on only text that looks like a Mealkeeper export.
+    // ones marked sensitive, and pass on only text that looks like a meal export.
     private fun offerCopiedMeal() {
         if (!isPageLoaded || !prefs.getBoolean(PREF_CLIPBOARD_WATCH, true)) return
         val clipboard = getSystemService(ClipboardManager::class.java) ?: return
@@ -138,7 +138,7 @@ class MainActivity : Activity() {
 
     private fun copyToClipboard(text: String) {
         val clipboard = getSystemService(ClipboardManager::class.java) ?: return
-        clipboard.setPrimaryClip(ClipData.newPlainText("Mealkeeper", text))
+        clipboard.setPrimaryClip(ClipData.newPlainText("Prompt to Pan", text))
         // The app's own copies (prompts, setup instructions, shopping list) shouldn't come back as import offers.
         clipboard.primaryClipDescription?.let { markClipSeen(it) }
     }
@@ -155,7 +155,7 @@ class MainActivity : Activity() {
         return startOther(launch)
     }
 
-    // Claude's share handler has occasionally finished without opening a chat. If Mealkeeper still has focus once
+    // Claude's share handler has occasionally finished without opening a chat. If the app still has focus once
     // the AI app should be in front, copy the prompt and open the app so the user can paste it. The toast is
     // Android's rather than the page's so it stays visible over the AI app.
     private fun checkAiAppOpened(ai: String, text: String) {
@@ -276,7 +276,7 @@ class MainActivity : Activity() {
                     startActivityForResult(intent, REQUEST_EXPORT_BACKUP)
                 } catch (e: ActivityNotFoundException) {
                     pendingBackupJson = null
-                    shareText(json, "Save Mealkeeper backup")
+                    shareText(json, "Save Prompt to Pan backup")
                 }
             }
         }
@@ -315,7 +315,7 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun sendToAiApp(ai: String, text: String): String {
             val app = AI_APPS[ai] ?: return "missing"
-            // NEW_TASK: otherwise the AI app's screen joins Mealkeeper's task, and returning to Mealkeeper shows it again.
+            // NEW_TASK: otherwise the AI app's screen joins this app's task, and returning here shows it again.
             val share = Intent(Intent.ACTION_SEND).setPackage(app.packageName).setType("text/plain")
                 .putExtra(Intent.EXTRA_TEXT, text).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             if (share.resolveActivity(packageManager) != null && startOther(share)) {

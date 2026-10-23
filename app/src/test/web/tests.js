@@ -279,7 +279,7 @@ test('export sends the backup to Android', () => {
   exportBackup();
   let call = bridge.calls.find(c => c[0] === 'saveBackupFile');
   assert(call, 'bridge not called');
-  assert(/^mealkeeper-backup-\d{4}-\d{2}-\d{2}\.json$/.test(call[1]), 'file name ' + call[1]);
+  assert(/^prompt-to-pan-backup-\d{4}-\d{2}-\d{2}\.json$/.test(call[1]), 'file name ' + call[1]);
   let data = JSON.parse(call[2]);
   eq([data.format, data.meals.length, data.settings], [BACKUP_FORMAT, 4, {awake: false, cookAwake: true, clipOffer: true}]);
 });
@@ -325,7 +325,7 @@ test('the format the AI is given is one the importer accepts', () => {
   eq([m.recipes.length, m.recipes[0].ingredients.length, m.shopping.length, m.timeline.length], [1, 1, 1, 1]);
   eq(m.shopping[0].usedIn, ['…'], 'used_in ids resolve to recipe titles');
   for (let text of [AI_SETUP_INSTRUCTIONS, ONE_OFF_PROMPT]) assert(text.includes(EXPORT_FORMAT), 'format missing');
-  assert(AI_SETUP_INSTRUCTIONS.includes('"send it to Mealkeeper"'), 'trigger phrase missing');
+  assert(AI_SETUP_INSTRUCTIONS.includes('"send it to the pan"'), 'trigger phrase missing');
 });
 
 test('"Open ChatGPT" opens the app, or the website without it', () => {
@@ -385,7 +385,7 @@ test('no offer while a dialog is open or when the setting is off', () => {
 
 test('a shared meal is offered; other shared text opens the import dialog', () => {
   receiveSharedText(sampleExport);
-  assert(modal().textContent.includes('SHARED WITH MEALKEEPER'), 'no offer');
+  assert(modal().textContent.includes('SHARED WITH PROMPT TO PAN'), 'no offer');
   closeModal();
   receiveSharedText('Grandma\'s lasagna: lots of cheese');
   assert(document.getElementById('import-area'), 'import dialog not open');
@@ -469,7 +469,7 @@ test('Revise with AI sends the whole meal and the request', () => {
   document.getElementById('ai-request').value = 'Make it vegetarian';
   sendToAi('claude');
   let prompt = lastPrompt();
-  assert(prompt.startsWith("Here's a meal from my Mealkeeper app. Make it vegetarian"), prompt.slice(0, 80));
+  assert(prompt.startsWith("Here's a meal from my Prompt to Pan app. Make it vegetarian"), prompt.slice(0, 80));
   assert(prompt.includes('"mealkeeper_id":"1"'), 'id missing');
   eq(fromV1Meal(parseMealkeeperJson(prompt).meals[0], 0).recipes.length, 3, 'meal JSON in the prompt imports');
   eq(modalOpen(), false);
