@@ -37,6 +37,15 @@ function reset() {
   appearance = 'light';
   clipOffer = true;
   bridge.aiAppResult = 'shared';
+  bridge.keys = {};
+  refreshAiKeys();
+  Object.keys(aiCalls).forEach(id => delete aiCalls[id]);
+  chat = null;
+  chatTurn = null;
+  chatError = null;
+  chatDraft = '';
+  aiModels = {};
+  aiModelLists = {};
   render();
   bridge.calls.length = 0;
 }
@@ -825,6 +834,451 @@ test('the name uses the bundled script font', () => {
   let brand = getComputedStyle(document.querySelector('.brand'));
   assert(brand.fontFamily.includes('Satisfy'), brand.fontFamily);
   eq(document.querySelector('.brand').textContent.trim(), 'Prompt to Pan');
+});
+
+
+// ---- Chat with an API key (chat.js) ----
+
+const lastAiRequest = () => bridgeCalls('aiRequest').pop();
+const aiBody = () => lastAiRequest()[5];
+const streamAi = events => window.onAiEvents(lastAiRequest()[1], events.map(e => JSON.stringify(e)));
+const finishAi = (status = 200, body = null) => window.onAiDone(lastAiRequest()[1], status, body);
+
+function connect(ai) {
+  bridge.keys[ai] = true;
+  refreshAiKeys();
+  myAi = ai;
+}
+
+function say(text) {
+  go('chat');
+  document.getElementById('chat-input').value = text;
+  sendFromComposer();
+}
+
+const TEST_MEAL = {
+  mealkeeper_id: null, name: 'Lemon chicken supper', description: 'Bright and easy.', servings: 4, total_time: '1 hr',
+  recipes: [{id: 'chicken', title: 'Lemon roast chicken', course: 'Main', servings: 4, prep_time_minutes: 10, cook_time_minutes: 50, total_time_minutes: 60,
+    ingredients: [{name: 'Chicken thighs', quantity: 8, unit: null, notes: null}], instructions: ['Roast it with lemon.'], make_ahead_notes: null, source: null}],
+  shopping_list: [{name: 'Chicken thighs', quantity: 8, unit: null, category: 'Meat', used_in: ['chicken']}],
+  timeline: [{start_offset_minutes: 0, duration_minutes: 60, task: 'Roast the chicken', recipe_id: 'chicken', instructions: null}]
+};
+
+// A streamed Claude reply: a thinking block, some text, and optionally a save_meal call split over two deltas.
+function claudeReply(text, meal, stop) {
+  let ev = [{type: 'message_start', message: {model: 'claude-opus-5-5'}},
+    {type: 'content_block_start', index: 0, content_block: {type: 'thinking', thinking: ''}},
+    {type: 'content_block_delta', index: 0, delta: {type: 'thinking_delta', thinking: 'Planning.'}},
+    {type: 'content_block_delta', index: 0, delta: {type: 'signature_delta', signature: 'sig'}},
+    {type: 'content_block_stop', index: 0},
+    {type: 'content_block_start', index: 1, content_block: {type: 'text', text: ''}},
+    {type: 'content_block_delta', index: 1, delta: {type: 'text_delta', text}},
+    {type: 'content_block_stop', index: 1}];
+  if (meal) {
+    let json = typeof meal === 'string' ? meal : JSON.stringify(meal);
+    ev.push({type: 'content_block_start', index: 2, content_block: {type: 'tool_use', id: 'toolu_1', name: 'save_meal', input: {}}},
+      {type: 'content_block_delta', index: 2, delta: {type: 'input_json_delta', partial_json: json.slice(0, 15)}},
+      {type: 'content_block_delta', index: 2, delta: {type: 'input_json_delta', partial_json: json.slice(15)}},
+      {type: 'content_block_stop', index: 2});
+  }
+  ev.push({type: 'message_delta', delta: {stop_reason: stop || (meal ? 'tool_use' : 'end_turn')}}, {type: 'message_stop'});
+  return ev;
+}
+
+function responsesReply(text, meal, id = 'resp_1') {
+  let ev = [{type: 'response.created', response: {id}}, {type: 'response.output_text.delta', delta: text}];
+  if (meal) ev.push({type: 'response.output_item.added', item: {type: 'function_call', call_id: 'call_1', name: 'save_meal', arguments: ''}},
+    {type: 'response.output_item.done', item: {type: 'function_call', call_id: 'call_1', name: 'save_meal', arguments: JSON.stringify(meal)}});
+  ev.push({type: 'response.completed', response: {id, status: 'completed'}});
+  return ev;
+}
+
+test('without an API key, Plan with AI goes to the setup steps and Chat offers to connect', () => {
+  planWithAi();
+  eq(page, 'ai');
+  assert(main().textContent.includes('Add API key'), 'AI page offers a key');
+  go('chat');
+  assert(main().textContent.includes('Connect ChatGPT to chat here'), main().textContent);
+  assert(!document.getElementById('chat-input'), 'no message box without a key');
+});
+
+test('saving an API key checks it with the AI and picks the default model', () => {
+  keyModal('claude');
+  document.getElementById('ai-key').value = ' sk-ant-test ';
+  saveAiKey('claude');
+  eq(bridgeCalls('setAiKey')[0].slice(1), ['claude', ' sk-ant-test ']);
+  let r = lastAiRequest();
+  eq([r[2], r[3], r[4]], ['claude', 'GET', '/v1/models']);
+  assert(modalOpen() && modal().textContent.includes('Checking'), 'shows it is checking');
+  finishAi(200, JSON.stringify({data: [{id: 'claude-sonnet-5-5'}, {id: 'claude-opus-5-5'}, {id: 'claude-haiku-5-5'}]}));
+  assert(!modalOpen(), 'dialog closes');
+  assert(hasKey('claude'), 'connected');
+  eq(aiModelLists.claude[0], 'claude-opus-5-5', 'default model first');
+  eq(aiModel('claude'), 'claude-opus-5-5');
+  go('settings');
+  assert(main().textContent.includes('Connected with your Anthropic key'), 'settings shows it');
+  eq(main().querySelector('select[aria-label="Claude model"]').options.length, 3);
+});
+
+test('a key the AI rejects is removed again', () => {
+  keyModal('grok');
+  document.getElementById('ai-key').value = 'xai-wrong';
+  saveAiKey('grok');
+  finishAi(400, '{"code":"invalid-argument","error":"Incorrect API key provided. You can obtain an API key from https://console.x.ai."}');
+  eq(bridgeCalls('clearAiKey').length, 1);
+  assert(!hasKey('grok'), 'not connected');
+  assert(modalOpen() && modal().textContent.includes("didn't accept that key"), 'says why');
+});
+
+test('the OpenAI model list leaves out models that can\'t chat, and the chosen model is kept', () => {
+  connect('chatgpt');
+  aiModels.chatgpt = 'gpt-6-luna';
+  loadModels('chatgpt');
+  finishAi(200, JSON.stringify({data: ['gpt-6-luna', 'gpt-image-2.5-flare', 'text-embedding-3-large', 'gpt-6-sol', 'gpt-realtime-2.1', 'gpt-transcribe'].map(id => ({id}))}));
+  eq(aiModelLists.chatgpt, ['gpt-6-sol', 'gpt-6-luna']);
+  eq(aiModel('chatgpt'), 'gpt-6-luna', 'kept the user\'s choice');
+});
+
+test('Claude chat: the request, the streamed reply, and a saved meal going straight into the app', () => {
+  connect('claude');
+  let before = meals.length;
+  say('Plan a lemony dinner');
+  let r = lastAiRequest(), body = aiBody();
+  eq([r[2], r[3], r[4], r[6]], ['claude', 'POST', '/v1/messages', 'server-side-fallback-2026-07-01']);
+  eq(body.model, 'claude-opus-5-5');
+  eq(body.stream, true);
+  eq(body.fallbacks, 'default');
+  eq(body.output_config, {effort: 'medium'});
+  assert(!('temperature' in body) && !('thinking' in body), 'no sampling or thinking settings');
+  eq(body.tools[0].name, 'save_meal');
+  eq(body.tools[0].eager_input_streaming, true);
+  assert(body.system.includes('save_meal') && body.system.includes(MEAL_RULES), 'system prompt');
+  eq(body.messages, [{role: 'user', content: 'Plan a lemony dinner'}]);
+  assert(main().textContent.includes('Thinking…'), 'shows it is thinking');
+  streamAi(claudeReply('Here you go!', TEST_MEAL).slice(0, -3));
+  assert(main().textContent.includes('Writing up the meal…'), 'says it is writing the meal');
+  assert(main().textContent.includes('Here you go!'), 'streams text');
+  streamAi(claudeReply('', TEST_MEAL).slice(-3));
+  finishAi();
+  eq(meals.length, before + 1);
+  eq(meals[0].name, 'Lemon chicken supper');
+  eq(selectedMeal, meals[0].id);
+  let text = main().textContent;
+  assert(text.includes('Added to your meals') && text.includes('Lemon chicken supper'), 'meal card');
+  assert(!text.includes('recipes":') && !text.includes('mealkeeper'), 'no JSON shown');
+  eq(chat.messages.length, 2);
+  eq(chat.messages[1].content.map(b => b.type), ['thinking', 'text', 'tool_use']);
+  eq(chat.messages[1].content[0], {type: 'thinking', thinking: 'Planning.', signature: 'sig'});
+  eq(chat.messages[1].content[2].input.name, 'Lemon chicken supper');
+  eq(chat.pending.length, 1);
+  eq(chat.pending[0].tool_use_id, 'toolu_1');
+  assert(chat.pending[0].content.includes(`"${meals[0].id}"`), 'tells the AI the meal id');
+  main().querySelector('.meal-saved button').click();
+  eq(page, 'meal');
+});
+
+test('the next message carries the tool result, and saving with the meal\'s id updates it', () => {
+  connect('claude');
+  say('Plan a lemony dinner');
+  streamAi(claudeReply('Saved.', TEST_MEAL));
+  finishAi();
+  let count = meals.length, id = meals[0].id;
+  say('Make it serve 6');
+  let msgs = aiBody().messages;
+  eq(msgs.length, 3);
+  eq(msgs[2].content[0].type, 'tool_result');
+  eq(msgs[2].content[1], {type: 'text', text: 'Make it serve 6'});
+  streamAi(claudeReply('Updated it.', {...TEST_MEAL, mealkeeper_id: String(id), name: 'Lemon chicken for six', servings: 6}));
+  finishAi();
+  eq(meals.length, count, 'no copy added');
+  eq(meals.find(m => m.id === id).name, 'Lemon chicken for six');
+  assert(main().textContent.includes('Updated'), 'card says updated');
+});
+
+test('a new meal with the same name as a saved one is added, not swapped in', () => {
+  connect('claude');
+  let count = meals.length, name = meals[0].name;
+  say('Plan it');
+  streamAi(claudeReply('Done.', {...TEST_MEAL, name}));
+  finishAi();
+  eq(meals.length, count + 1);
+});
+
+test('Revise with AI, with a key, talks it through in the chat and updates the meal', () => {
+  connect('claude');
+  openMeal(1);
+  let count = meals.length, name = currentMeal().name;
+  reviseMeal();
+  assert(modal().textContent.includes('answers here in the app'), modal().textContent);
+  assert(!modal().textContent.includes('↗'), 'no outside link');
+  document.getElementById('ai-request').value = 'Make it vegetarian';
+  sendToAi();
+  eq(page, 'chat');
+  eq(bridgeCalls('sendToAiApp').length, 0, 'stays in the app');
+  let prompt = aiBody().messages[0].content;
+  assert(prompt.includes('"mealkeeper_id":"1"') && prompt.includes('save_meal') && !prompt.includes('Ready to copy'), prompt);
+  let bubble = main().querySelector('.bubble.user');
+  assert(bubble.textContent.includes('Make it vegetarian') && bubble.textContent.includes(name), 'shows the request and the meal');
+  assert(!main().textContent.includes('mealkeeper_id'), 'not the JSON');
+  streamAi(claudeReply('Done.', {...TEST_MEAL, mealkeeper_id: '1', name: 'Veggie Italian supper'}));
+  finishAi();
+  eq(meals.length, count);
+  eq(meals.find(m => m.id === 1).name, 'Veggie Italian supper');
+  handleBack();
+  eq(page, 'meal', 'back returns to the meal');
+});
+
+test('Ask AI, with a key, answers in the chat with the recipe behind the scenes', () => {
+  connect('chatgpt');
+  openMeal(1);
+  let r = currentMeal().recipes[0];
+  askAbout('recipe', 0);
+  document.getElementById('ai-request').value = 'Can I make it ahead?';
+  sendToAi();
+  eq(page, 'chat');
+  let input = aiBody().input;
+  assert(input[0].content.includes(r.title) && input[0].content.includes('Can I make it ahead?'), 'prompt has the recipe');
+  assert(!main().textContent.includes('Ingredients:'), 'the chat shows just the question');
+  assert(main().querySelector('.bubble.user').textContent.includes(r.title), 'and what it is about');
+});
+
+test('without a key, Revise and Ask still hand off to the AI app', () => {
+  openMeal(1);
+  reviseMeal();
+  document.getElementById('ai-request').value = 'Make it vegetarian';
+  sendToAi();
+  eq(bridgeCalls('sendToAiApp').length, 1);
+  assert(bridgeCalls('sendToAiApp')[0][2].includes('Ready to copy'), 'hand-off prompt');
+  eq(bridgeCalls('aiRequest').length, 0);
+});
+
+test('a refusal or an error leaves the conversation as it was and offers to try again', () => {
+  connect('claude');
+  say('hello');
+  streamAi([{type: 'message_delta', delta: {stop_reason: 'refusal'}}, {type: 'message_stop'}]);
+  finishAi();
+  eq(chat.items.length, 0);
+  eq(chat.messages.length, 0);
+  assert(main().textContent.includes('declined'), main().textContent);
+  main().querySelector('.chat-error button').click();
+  eq(aiBody().messages, [{role: 'user', content: 'hello'}], 'retried');
+  finishAi(401, '{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}');
+  assert(main().textContent.includes("didn't accept your API key"), main().textContent);
+  main().querySelector('.chat-error button').click();
+  finishAi(-1, 'timeout');
+  assert(main().textContent.includes("Couldn't reach Claude"), main().textContent);
+  main().querySelector('.chat-error button').click();
+  finishAi(400, '{"type":"error","error":{"type":"invalid_request_error","message":"model: not found"}}');
+  assert(main().textContent.includes('model: not found'), 'shows the API\'s message');
+});
+
+test('invalid meal data from the AI is reported back to it, not saved', () => {
+  connect('claude');
+  let count = meals.length;
+  say('Plan it');
+  streamAi(claudeReply('Saving.', '{"name": "Brok'));
+  finishAi();
+  eq(meals.length, count);
+  eq(chat.pending[0].is_error, true);
+  assert(chat.pending[0].content.includes('cut off'), chat.pending[0].content);
+  eq(chat.messages[1].content[2].input, {}, 'history keeps a valid object');
+});
+
+test('after a server-side fallback, the declined model\'s blocks before the marker aren\'t sent back', () => {
+  connect('claude');
+  say('hello');
+  streamAi([
+    {type: 'content_block_start', index: 0, content_block: {type: 'thinking', thinking: ''}},
+    {type: 'content_block_delta', index: 0, delta: {type: 'signature_delta', signature: 'old'}},
+    {type: 'content_block_start', index: 1, content_block: {type: 'text', text: ''}},
+    {type: 'content_block_delta', index: 1, delta: {type: 'text_delta', text: 'Partial '}},
+    {type: 'content_block_start', index: 2, content_block: {type: 'fallback', from: {model: 'claude-opus-5-5'}, to: {model: 'claude-opus-5'}}},
+    {type: 'content_block_start', index: 3, content_block: {type: 'thinking', thinking: ''}},
+    {type: 'content_block_delta', index: 3, delta: {type: 'signature_delta', signature: 'new'}},
+    {type: 'content_block_start', index: 4, content_block: {type: 'text', text: ''}},
+    {type: 'content_block_delta', index: 4, delta: {type: 'text_delta', text: 'answer.'}},
+    {type: 'message_delta', delta: {stop_reason: 'end_turn'}}]);
+  finishAi();
+  eq(chat.messages[1].content.map(b => b.type + (b.signature ? ':' + b.signature : '')), ['text', 'thinking:new', 'text']);
+  assert(main().textContent.includes('Partial answer.'), 'shows all the text');
+});
+
+test('ChatGPT chat uses the Responses API and continues from the last response', () => {
+  connect('chatgpt');
+  let before = meals.length;
+  say('Plan a lemony dinner');
+  let r = lastAiRequest(), body = aiBody();
+  eq([r[2], r[4], r[6]], ['chatgpt', '/v1/responses', '']);
+  eq(body.model, 'gpt-6-sol');
+  eq(body.stream, true);
+  assert(body.instructions.includes('save_meal'), 'instructions');
+  eq([body.tools[0].type, body.tools[0].name, body.tools[0].strict], ['function', 'save_meal', true]);
+  assert(!('previous_response_id' in body), 'first message starts fresh');
+  eq(body.input, [{role: 'user', content: 'Plan a lemony dinner'}]);
+  streamAi(responsesReply('Saving it now.', TEST_MEAL, 'resp_1'));
+  finishAi();
+  eq(meals.length, before + 1);
+  eq(chat.responseId, 'resp_1');
+  assert(main().textContent.includes('Saving it now.') && main().textContent.includes('Added to your meals'), 'reply and card');
+  say('Thanks');
+  body = aiBody();
+  eq(body.previous_response_id, 'resp_1');
+  eq(body.input[0].type, 'function_call_output');
+  eq(body.input[0].call_id, 'call_1');
+  eq(body.input[1], {role: 'user', content: 'Thanks'});
+  streamAi([{type: 'response.created', response: {id: 'resp_2'}}, {type: 'response.failed', response: {id: 'resp_2', error: {message: 'server error'}}}]);
+  finishAi();
+  eq(chat.responseId, 'resp_1', 'a failed reply doesn\'t move the conversation on');
+  eq(chat.pending.length, 1, 'and the tool result is sent again next time');
+});
+
+test('Grok uses xAI\'s Responses API, without OpenAI\'s strict mode', () => {
+  connect('grok');
+  say('hi');
+  let r = lastAiRequest(), body = aiBody();
+  eq([r[2], r[4]], ['grok', '/v1/responses']);
+  eq(body.model, 'grok-4.7');
+  assert(!('strict' in body.tools[0]), 'no strict');
+  // xAI rejects instructions together with previous_response_id: the system prompt goes in the first input only.
+  assert(!('instructions' in body), 'no instructions field');
+  eq(body.input[0].role, 'system');
+  assert(body.input[0].content.includes('save_meal'), 'system prompt');
+  eq(body.input[1], {role: 'user', content: 'hi'});
+  streamAi(responsesReply('Hello!', null, 'resp_1'));
+  finishAi();
+  say('Plan dinner');
+  body = aiBody();
+  eq(body.previous_response_id, 'resp_1');
+  assert(!('instructions' in body), 'still no instructions');
+  eq(body.input, [{role: 'user', content: 'Plan dinner'}]);
+  streamAi([{type: 'response.created', response: {id: 'r'}}, {type: 'response.output_text.delta', delta: 'Hello!'}]);
+  finishAi();
+  assert(main().textContent.includes('was cut off'), 'a reply that never completed is an error');
+});
+
+test('stopping a reply cancels it and puts the message back in the box', () => {
+  connect('claude');
+  say('hello there');
+  let id = lastAiRequest()[1];
+  main().querySelector('.composer .send').click();
+  eq(bridgeCalls('aiCancel')[0][1], id);
+  eq(chat.items.length, 0);
+  eq(document.getElementById('chat-input').value, 'hello there');
+  window.onAiDone(id, -1, 'cancelled');
+  assert(!chatError, 'a late finish is ignored');
+});
+
+test('the chat and chosen models are saved and come back after a restart', () => {
+  connect('claude');
+  aiModels.claude = 'claude-sonnet-5-5';
+  say('hello');
+  streamAi(claudeReply('Hi! What are we cooking?'));
+  finishAi();
+  let saved = JSON.parse(localStorage.getItem(STORE_KEY));
+  chat = null;
+  aiModels = {};
+  applyState(saved);
+  eq(chat.items.map(i => i.role), ['user', 'assistant']);
+  eq(chat.messages.length, 2);
+  eq(aiModel('claude'), 'claude-sonnet-5-5');
+  go('chat');
+  assert(main().textContent.includes('What are we cooking?'), 'shown again');
+});
+
+test('Send to pan asks the AI to save, and Responses API AIs must call save_meal', () => {
+  connect('grok');
+  say('Ideas for a salad?');
+  assert(!main().querySelector('.chat-to-pan'), 'not while the AI is replying');
+  streamAi(responsesReply('Try an apple-celery slaw.', null, 'resp_1'));
+  finishAi();
+  let before = meals.length;
+  main().querySelector('.chat-to-pan').click();
+  let body = aiBody();
+  eq(body.tool_choice, 'required');
+  assert(body.input[0].content.includes('save_meal'), 'asks for save_meal');
+  assert(main().textContent.includes('Send it to the pan'), 'shown as the user\'s message');
+  streamAi(responsesReply('Saved!', TEST_MEAL, 'resp_2'));
+  finishAi();
+  eq(meals.length, before + 1);
+  assert(!main().querySelector('.chat-to-pan'), 'not under a saved meal');
+  say('Thanks');
+  assert(!('tool_choice' in aiBody()), 'ordinary messages leave it to the AI');
+  finishAi(500, '{}');
+  assert(!main().querySelector('.chat-to-pan'), 'not under an error');
+});
+
+test('Claude only gets asked to save: it can\'t be forced to use a tool while thinking', () => {
+  connect('claude');
+  say('hello');
+  streamAi(claudeReply('Hi!'));
+  finishAi();
+  sendToPan();
+  let body = aiBody();
+  assert(!('tool_choice' in body), 'no tool_choice');
+  assert(body.messages[2].content.includes('save_meal'), 'asks for save_meal');
+});
+
+test('Close asks first, then clears the chat and goes back', () => {
+  connect('claude');
+  go('meals');
+  say('hello');
+  streamAi(claudeReply('Hi!'));
+  finishAi();
+  main().querySelector('button[onclick="confirmCloseChat()"]').click();
+  assert(modalOpen() && modal().textContent.includes('Close this chat?'), 'asks');
+  closeModal();
+  eq(chat.items.length, 2, 'cancel keeps it');
+  confirmCloseChat();
+  closeChat();
+  eq(chat, null);
+  eq(page, 'meals');
+  assert(!modalOpen(), 'dialog closed');
+  go('chat');
+  assert(main().textContent.includes('Brainstorm a meal'), 'starts fresh');
+});
+
+test('Report on a reply opens an email with the reply in it', () => {
+  connect('claude');
+  say('hello');
+  streamAi(claudeReply('Hi! What are we cooking?'));
+  finishAi();
+  opened = [];
+  let buttons = main().querySelectorAll('.chat-report');
+  eq(buttons.length, 1, 'only the AI reply has one');
+  buttons[0].click();
+  let url = opened[0];
+  assert(url.startsWith('mailto:prompttopan.support@gmail.com?'), url);
+  let body = decodeURIComponent(url.split('&body=')[1]);
+  assert(body.includes('Claude (claude-opus-5-5)') && body.includes('Hi! What are we cooking?'), body);
+  chat.items[1].text = 'x'.repeat(5000);
+  opened = [];
+  reportReply(1);
+  assert(decodeURIComponent(opened[0]).length < 2000, 'a long reply is cut short');
+});
+
+test('chat replies get simple formatting and never raw markup', () => {
+  let div = document.createElement('div');
+  div.innerHTML = chatHtml('**Menu** for *two*\n- Soup\n- Bread <img src=x onerror="window.pwned=1">\n1. First\n```\n<b>code</b>\n```');
+  eq(div.querySelector('strong').textContent, 'Menu');
+  eq(div.querySelector('em').textContent, 'two');
+  eq([...div.querySelectorAll('ul li')].map(li => li.textContent), ['Soup', 'Bread <img src=x onerror="window.pwned=1">']);
+  eq(div.querySelectorAll('ol li').length, 1);
+  eq(div.querySelector('pre').textContent, '<b>code</b>');
+  assert(!div.querySelector('img, b'), 'escaped');
+});
+
+test('the meal schema meets OpenAI strict mode: closed objects with every field required', () => {
+  let walk = (s, path) => {
+    if (s.type === 'object') {
+      eq(s.additionalProperties, false, path);
+      eq(s.required.slice().sort(), Object.keys(s.properties).sort(), path);
+      Object.entries(s.properties).forEach(([k, v]) => walk(v, `${path}.${k}`));
+    }
+    if (s.type === 'array') walk(s.items, `${path}[]`);
+  };
+  walk(MEAL_SCHEMA, 'meal');
+  let meal = fromV1Meal(TEST_MEAL, 0);
+  eq(meal.recipes[0].title, 'Lemon roast chicken', 'the app reads what the schema describes');
 });
 
 // ---- Report ----

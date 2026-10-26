@@ -10,13 +10,13 @@ Prompt to Pan
 
 **Short description** (80 characters max)
 
-Plan meals with ChatGPT or Claude, then cook from recipes, lists and timelines.
+Plan meals with Claude, ChatGPT or Grok, then cook from recipes and timelines.
 
 **Full description** (4,000 characters max)
 
 Prompt to Pan is the cooking side of planning meals with AI.
 
-Brainstorm a dinner with ChatGPT or Claude the way you already do: what's in season, who's coming, what you're in the mood for. When the plan is right, say "send it to the pan". Your AI turns it into a meal you can bring into Prompt to Pan with a tap, and the app takes it from there.
+Brainstorm a dinner with Claude, ChatGPT or Grok: what's in season, who's coming, what you're in the mood for. Chat right in the app with your own API key, and when the plan is right, the meal lands in your collection with its recipes, shopping list and timeline. No copying, no pasting. Prefer the AI's own app? Set it up once, say "send it to the pan", and bring the meal over with a tap.
 
 COOK FROM YOUR PHONE
 • Every recipe with its ingredients, steps and times
@@ -25,9 +25,10 @@ COOK FROM YOUR PHONE
 • Keep-awake mode so the screen stays on while you cook
 
 KEEP TALKING TO YOUR AI
-• Revise with AI: ask for a change ("swap the russets for Yukon Golds") and the updated meal comes back into the app, keeping your check marks
-• Ask AI: send a recipe or timeline step to your AI with a question
-• One-time setup gives your ChatGPT or Claude project the instructions it needs
+• Chat with Claude, ChatGPT or Grok inside the app using your own API key, and pick the model
+• Revise with AI: ask for a change ("swap the russets for Yukon Golds") and the updated meal replaces the old one, keeping your check marks
+• Ask AI: ask about a recipe or timeline step while you cook
+• Or use the ChatGPT, Claude or Grok app: a one-time setup gives it the instructions it needs
 
 SHARE AND KEEP YOUR MEALS
 • Share a meal with someone who has the app, or as readable text with anyone
@@ -35,12 +36,12 @@ SHARE AND KEEP YOUR MEALS
 • Delete meals and recipes you're done with
 
 PRIVATE BY DESIGN
-No account, no ads, no tracking. The app doesn't use the internet; your meals stay on your phone.
+No account, no ads, no tracking, and no server in the middle. Your meals stay on your phone; chat messages go straight to the AI you connect, with your key stored encrypted on the device.
 
-Prompt to Pan works with the ChatGPT and Claude apps, or their websites. It isn't made by or affiliated with OpenAI or Anthropic.
+API use is billed by the AI provider to your own account (an app subscription such as ChatGPT Plus or Claude Pro doesn't include it). Prompt to Pan isn't made by or affiliated with Anthropic, OpenAI or xAI.
 
 **App category:** Food & Drink
-**Contact email:** required by Play and shown publicly (consider a separate address for the app).
+**Contact email:** prompttopan.support@gmail.com (also where in-app Report emails go)
 **Privacy policy URL:** https://jimbo-yo.github.io/MealkeeperAndroid/privacy.html
 
 ## App content answers
@@ -57,13 +58,17 @@ Prompt to Pan works with the ChatGPT and Claude apps, or their websites. It isn'
 
 **News app:** No.
 
-**Data safety:**
-- Does your app collect or share any of the required user data types? **No.** Meals and settings stay on the device; the clipboard is read only on the device to spot a meal export and is never transmitted. Sharing to the AI apps or the share sheet happens only when the user taps it, and the user chooses the destination.
-- Is all of the user data collected by your app encrypted in transit? Not applicable (nothing collected).
-- Do you provide a way for users to request that their data is deleted? Not applicable (nothing collected).
+**AI-generated content:** the in-app chat shows replies from the AI the user connects. Every reply has a **Report** button that opens an email to prompttopan.support@gmail.com with the reply filled in, which meets Play's requirement for in-app reporting of offensive AI content.
+
+**Data safety:** the in-app chat sends what the user writes (and the meal or recipe they ask about) from the phone to the AI provider they connected. Google counts data that leaves the device through the app as collected, even though it goes to the user's own AI account and never to the developer, so declare it:
+- Does your app collect or share any of the required user data types? **Yes.**
+- Data type: **App activity → Other user-generated content**. Collected: yes. Shared: no (it goes to the provider only when the user sends a message, which is a user-initiated transfer). Processed ephemerally: no. Required or optional: **optional** (only with an API key). Purpose: **App functionality**.
+- Is all of the user data collected by your app encrypted in transit? **Yes** (HTTPS).
+- Do you provide a way for users to request that their data is deleted? The developer holds no user data; chats are deleted on the device with **Close**, and anything held by the AI provider is managed in the user's account with that provider. Answer **No** and explain this in the privacy policy (it does).
+- Not collected: meals, the shopping list and settings stay on the device; the clipboard is read only on the device to spot a meal export and is never transmitted. API keys are stored on the device and sent only to their own provider.
 
 **Government app / financial features / health:** No.
 
 ## Release notes for the first version
 
-First release: bring meals in from ChatGPT or Claude, cook from recipes, shopping lists and timelines, and send meals back to your AI for changes.
+First release: plan meals with Claude, ChatGPT or Grok (in the app with your own API key, or in their apps), then cook from recipes, shopping lists and timelines.

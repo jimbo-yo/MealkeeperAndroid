@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Lets MainActivity find the ChatGPT and Claude apps (Android 11+ package visibility); see AI_APPS. -->
+    <!-- Only for chatting with the AI the user connects with their own API key (AiApi). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets MainActivity find the ChatGPT, Claude and Grok apps (Android 11+ package visibility); see AI_APPS. -->
     <queries>
         <package android:name="com.openai.chatgpt" />
         <package android:name="com.anthropic.claude" />
+        <package android:name="ai.x.grok" />
     </queries>
     <application
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"

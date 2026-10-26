@@ -800,3 +800,179 @@ textarea.field {
     max-width: 430px;
   }
 }
+
+/* ---- Chat (chat.js) ---- */
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Room for the message box, which sits above the bottom nav. */
+  padding-bottom: 76px;
+}
+
+.bubble {
+  max-width: 88%;
+  padding: 11px 14px;
+  border-radius: 18px;
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.bubble.user {
+  align-self: flex-end;
+  background: light-dark(#496548, #4f6b4d);
+  color: white;
+  border-bottom-right-radius: 6px;
+}
+
+.bubble-about {
+  font-size: 12px;
+  opacity: .8;
+  margin-bottom: 4px;
+}
+
+.bubble.ai {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 6px;
+  white-space: normal;
+}
+
+.bubble.ai p {
+  margin: 0 0 8px;
+}
+
+.bubble.ai p:last-child,
+.bubble.ai ul:last-child,
+.bubble.ai ol:last-child {
+  margin-bottom: 0;
+}
+
+.bubble.ai ul,
+.bubble.ai ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.bubble.ai pre {
+  overflow-x: auto;
+  font-size: 12px;
+  background: var(--surface-2);
+  padding: 8px;
+  border-radius: 8px;
+  white-space: pre;
+}
+
+.bubble.ai code {
+  font-size: 13px;
+}
+
+.chat-report {
+  align-self: flex-start;
+  margin: -4px 0 0 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: light-dark(#73796f, #a0a99e);
+}
+
+.chat-to-pan {
+  align-self: flex-end;
+  margin-top: 2px;
+}
+
+.meal-saved {
+  margin: 2px 0;
+  border-color: light-dark(#b9c9af, #4c5f47);
+}
+
+.chat-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: light-dark(#6d7569, #a1aa9d);
+  padding: 4px 2px;
+}
+
+.dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dot 1.2s infinite ease-in-out;
+}
+
+.dots i:nth-child(2) {
+  animation-delay: .15s;
+}
+
+.dots i:nth-child(3) {
+  animation-delay: .3s;
+}
+
+@keyframes dot {
+  0%, 80%, 100% { opacity: .25; }
+  40% { opacity: 1; }
+}
+
+.chat-error {
+  background: light-dark(#f6e3dc, #4a302a);
+  color: light-dark(#7c2f1d, #f6c9b8);
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-size: 14px;
+}
+
+.chat-error .text-btn {
+  margin-top: 6px;
+  color: inherit;
+  text-decoration: underline;
+}
+
+.chip {
+  font-size: 13px;
+  padding: 8px 13px;
+  text-align: left;
+}
+
+/* The message box: above the bottom nav, or above the keyboard while it's open. */
+.composer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  /* --nav-height is measured by render() in app.js; it includes the gesture-bar inset. */
+  bottom: max(var(--nav-height, calc(64px + var(--safe-bottom))), var(--android-ime-bottom, 0px));
+  z-index: 7;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+
+.composer textarea.field {
+  min-height: 0;
+  max-height: 140px;
+  resize: none;
+  padding: 10px 14px;
+  border-radius: 20px;
+}
+
+.composer .send {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  font-size: 16px;
+}

@@ -34,5 +34,27 @@ window.MealkeeperAndroid = {
   },
   setClipboardWatch(enabled) {
     this.calls.push(['setClipboardWatch', enabled]);
+  },
+  // API keys: which AIs have one (tests set this; the keys themselves aren't kept).
+  keys: {},
+  aiKeys() {
+    return JSON.stringify(this.keys);
+  },
+  setAiKey(ai, key) {
+    this.calls.push(['setAiKey', ai, key]);
+    if (!key.trim()) return false;
+    this.keys[ai] = true;
+    return true;
+  },
+  clearAiKey(ai) {
+    this.calls.push(['clearAiKey', ai]);
+    delete this.keys[ai];
+  },
+  // Recorded with the body parsed; tests answer through window.onAiEvents / window.onAiDone.
+  aiRequest(id, ai, method, path, body, beta) {
+    this.calls.push(['aiRequest', id, ai, method, path, body ? JSON.parse(body) : null, beta]);
+  },
+  aiCancel(id) {
+    this.calls.push(['aiCancel', id]);
   }
 };

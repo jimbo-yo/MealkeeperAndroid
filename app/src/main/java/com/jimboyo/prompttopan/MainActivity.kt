@@ -43,6 +43,7 @@ class MainActivity : Activity() {
     private var imeBottomDp = 0
     private val prefs: SharedPreferences by lazy { getSharedPreferences("mealkeeper", MODE_PRIVATE) }
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val aiApi by lazy { AiApi(this) { script -> mainHandler.post { runJs(script) } } }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -414,6 +415,23 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun openAiApp(ai: String): Boolean = launchAiApp(ai)
 
+        // Chatting through the user's own API keys; see AiApi and the page's chat.js.
+        @JavascriptInterface
+        fun aiKeys(): String = aiApi.status()
+
+        @JavascriptInterface
+        fun setAiKey(ai: String, key: String): Boolean = aiApi.setKey(ai, key)
+
+        @JavascriptInterface
+        fun clearAiKey(ai: String) = aiApi.clearKey(ai)
+
+        @JavascriptInterface
+        fun aiRequest(id: String, ai: String, method: String, path: String, body: String, beta: String) =
+            aiApi.request(id, ai, method, path, body, beta)
+
+        @JavascriptInterface
+        fun aiCancel(id: String) = aiApi.cancel(id)
+
         @JavascriptInterface
         fun shareText(text: String, title: String) {
             runOnUiThread {
@@ -454,6 +472,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
+        aiApi.cancelAll()
         if (::webView.isInitialized) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             webView.destroy()
@@ -472,7 +491,8 @@ class MainActivity : Activity() {
         // The page refers to the AI apps by these keys; the packages are also listed under <queries> in the manifest.
         private val AI_APPS = mapOf(
             "chatgpt" to AiApp("com.openai.chatgpt", "ChatGPT", shareFillsMessageBox = true),
-            "claude" to AiApp("com.anthropic.claude", "Claude", shareFillsMessageBox = false)
+            "claude" to AiApp("com.anthropic.claude", "Claude", shareFillsMessageBox = false),
+            "grok" to AiApp("ai.x.grok", "Grok", shareFillsMessageBox = false)
         )
         private const val AI_LAUNCH_CHECK_MS = 2500L
         private const val CLIP_OFFER_DELAY_MS = 1000L
