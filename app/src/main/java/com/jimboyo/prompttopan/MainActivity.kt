@@ -28,6 +28,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import android.window.OnBackInvokedDispatcher
 import org.json.JSONObject
 import java.io.File
 
@@ -50,6 +51,10 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { goBack() }
         }
 
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
@@ -427,17 +432,25 @@ class MainActivity : Activity() {
         }
     }
 
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
+    // Android 13+ (and every version once the app targets 36) delivers back through onBackInvokedDispatcher instead
+    // of onBackPressed; see the callback registered in onCreate.
+    @Deprecated("Only called before Android 13")
+    override fun onBackPressed() = goBack()
+
+    private fun goBack() {
         if (!::webView.isInitialized || !isPageLoaded) {
-            super.onBackPressed()
+            leave()
             return
         }
         // The page is a single-document app, so let it close modals / pop its own page stack first.
         webView.evaluateJavascript("(window.handleBack&&window.handleBack())===true") { handled ->
-            if (handled != "true") super@MainActivity.onBackPressed()
+            if (handled != "true") leave()
         }
     }
+
+    // The system's own back behaviour: send the app to the background (or finish it if it isn't the task root).
+    @Suppress("DEPRECATION")
+    private fun leave() = super.onBackPressed()
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
