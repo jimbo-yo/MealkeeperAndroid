@@ -16,7 +16,7 @@ Plan meals with Claude, ChatGPT or Grok, then cook from recipes and timelines.
 
 Prompt to Pan is the cooking side of planning meals with AI.
 
-Brainstorm a dinner with Claude, ChatGPT or Grok: what's in season, who's coming, what you're in the mood for. Chat right in the app with your own API key, and when the plan is right, the meal lands in your collection with its recipes, shopping list and timeline. No copying, no pasting. Prefer the AI's own app? Set it up once, say "send it to the pan", and bring the meal over with a tap.
+Brainstorm a dinner with Claude, ChatGPT or Grok: what's in season, who's coming, what you're in the mood for. Chat right in the app with your own API key, and when the plan is right, tap Send to pan: the meal lands in your collection with its recipes, shopping list and timeline. No copying, no pasting. Prefer the AI's own app? Set it up once, say "send it to the pan", and bring the meal over with a tap.
 
 COOK FROM YOUR PHONE
 • Every recipe with its ingredients, steps and times
