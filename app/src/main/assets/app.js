@@ -740,7 +740,7 @@ function shoppingPage(embedded = false) {
   let list = m.shopping,
     done = list.filter(x => x.checked).length,
     groups = [...new Set(list.map(x => x.group))];
-  return `${head}<div class="panel"><div class="spread"><div><strong>${list.length-done} items left</strong><div class="muted small" style="margin-top:4px">${done} of ${list.length} checked</div></div><div class="actions"><button class="outline" onclick="clearChecks()">Uncheck all</button><button class="secondary" onclick="copyList()">Copy list</button></div></div><div style="height:6px;background:var(--track);border-radius:9px;margin-top:15px;overflow:hidden"><div style="height:100%;width:${done/list.length*100}%;background:#66845b"></div></div></div>${groups.map(g=>`<div class="panel"><div class="spread"><h3 style="font-size:15px;margin:0">${escapeHtml(g)}</h3><span class="muted small">${list.filter(x=>x.group===g).length} items</span></div>${list.map((x,i)=>({...x,i})).filter(x=>x.group===g).map(x=>`<label class="checkrow ${x.checked?'checked':''}"><input type="checkbox" ${x.checked?'checked':''} onchange="toggleItem(${x.i},this.checked)"><span><span class="checktext">${escapeHtml(x.name)}</span>${x.usedIn.length?`<span class="muted small" style="display:block;margin-top:3px">for ${x.usedIn.map(recipeLink).join(', ')}</span>`:''}</span><span class="qty">${escapeHtml(x.qty)}</span></label>`).join('')}</div>`).join('')}`;
+  return `${head}<div class="panel"><div class="spread"><div><strong>${list.length-done} items left</strong><div class="muted small" style="margin-top:4px">${done} of ${list.length} checked</div></div><div class="actions"><button class="outline" onclick="clearChecks()">Uncheck all</button><button class="secondary" onclick="shareListModal()">Share list</button></div></div><div style="height:6px;background:var(--track);border-radius:9px;margin-top:15px;overflow:hidden"><div style="height:100%;width:${done/list.length*100}%;background:#66845b"></div></div></div>${groups.map(g=>`<div class="panel"><div class="spread"><h3 style="font-size:15px;margin:0">${escapeHtml(g)}</h3><span class="muted small">${list.filter(x=>x.group===g).length} items</span></div>${list.map((x,i)=>({...x,i})).filter(x=>x.group===g).map(x=>`<label class="checkrow ${x.checked?'checked':''}"><input type="checkbox" ${x.checked?'checked':''} onchange="toggleItem(${x.i},this.checked)"><span><span class="checktext">${escapeHtml(x.name)}</span>${x.usedIn.length?`<span class="muted small" style="display:block;margin-top:3px">for ${x.usedIn.map(recipeLink).join(', ')}</span>`:''}</span><span class="qty">${escapeHtml(x.qty)}</span></label>`).join('')}</div>`).join('')}`;
 }
 
 // Hands an alarm for when cooking starts to the Clock app, which asks the user to confirm it.
@@ -1030,10 +1030,40 @@ function clearChecks() {
   render()
 }
 
-function copyList() {
+// The shopping list as text to send, grouped like the list on screen. 'needed' leaves out checked items (what's
+// already in the kitchen); 'all' marks them with ✓.
+function listText(m, scope) {
+  let items = m.shopping.filter(x => scope === 'all' || !x.checked);
+  return [`${m.name}: ${scope === 'all' ? 'shopping list' : 'still needed'}`,
+    ...[...new Set(items.map(x => x.group))].map(g => `\n${g}\n` + items.filter(x => x.group === g).map(x => `${x.checked ? '✓' : '•'} ${x.name}${x.qty ? ` — ${x.qty}` : ''}`).join('\n'))
+  ].join('\n');
+}
+
+// Share list: choose all items or only unchecked ones, then send it (email, chat…) or copy it.
+function shareListModal(scope) {
   let m = currentMeal();
   if (!m) return;
-  copyText(`${m.name}\n` + m.shopping.map(x => `${x.checked?'[x]':'[ ]'} ${x.name} — ${x.qty}`).join('\n'), 'Shopping list copied');
+  let left = m.shopping.filter(x => !x.checked).length;
+  scope = scope || (left ? 'needed' : 'all');
+  let tab = (s, label) => `<button class="tab ${s === scope ? 'active' : ''}" ${s === 'needed' && !left ? 'disabled' : ''} onclick="shareListModal('${s}')">${label}</button>`;
+  openModal(`<div class="eyebrow">SHOPPING LIST</div><h2>Share the list</h2><div class="tabs" style="margin:6px 0 14px">${tab('needed', `Still needed (${left})`)}${tab('all', `Whole list (${m.shopping.length})`)}</div><pre class="list-preview">${escapeHtml(listText(m, scope))}</pre><div class="modal-foot"><button class="outline" onclick="copyList('${scope}')">Copy</button><button class="primary" onclick="shareList('${scope}')">Share…</button></div>`);
+}
+
+function shareList(scope) {
+  let m = currentMeal();
+  if (!m) return;
+  let text = listText(m, scope), subject = `${m.name}: shopping list`, android = window.MealkeeperAndroid;
+  closeModal();
+  if (android && android.shareText) android.shareText(text, 'Share shopping list', subject);
+  else if (navigator.share) navigator.share({title: subject, text}).catch(() => {});
+  else copyList(scope);
+}
+
+function copyList(scope) {
+  let m = currentMeal();
+  if (!m) return;
+  closeModal();
+  copyText(listText(m, scope), 'Shopping list copied');
 }
 
 function setServeAt(v) {
@@ -1079,7 +1109,7 @@ function openAi(ai) {
 
 function sharePrompt() {
   if (window.MealkeeperAndroid && window.MealkeeperAndroid.shareText) {
-    window.MealkeeperAndroid.shareText(ONE_OFF_PROMPT, 'Send prompt to AI assistant')
+    window.MealkeeperAndroid.shareText(ONE_OFF_PROMPT, 'Send prompt to AI assistant', '')
   } else if (navigator.share) {
     navigator.share({
       text: ONE_OFF_PROMPT

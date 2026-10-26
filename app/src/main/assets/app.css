@@ -903,6 +903,22 @@ textarea.field {
   font-size: 13px;
 }
 
+.list-preview {
+  max-height: 40vh;
+  overflow: auto;
+  margin: 0 0 4px;
+  padding: 12px 14px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font: 13px/1.5 var(--font-body);
+  white-space: pre-wrap;
+}
+
+.tab:disabled {
+  opacity: .45;
+}
+
 .chat-report {
   align-self: flex-start;
   margin: -4px 0 0 6px;

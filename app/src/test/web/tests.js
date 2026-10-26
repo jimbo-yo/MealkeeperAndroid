@@ -216,6 +216,39 @@ test('check marks belong to the selected meal', () => {
   assert(meals[0].shopping[0].checked, 'clearing another meal changed this one');
 });
 
+test('Share list sends only what\'s still needed, or the whole list, grouped like the screen', () => {
+  go('shopping');
+  let m = meals[0], first = m.shopping[0];
+  toggleItem(0, true);
+  [...main().querySelectorAll('button')].find(b => b.textContent === 'Share list').click();
+  assert(modalOpen(), 'dialog opens');
+  let tabs = [...modal().querySelectorAll('.tab')];
+  eq(tabs.map(t => t.textContent), [`Still needed (${m.shopping.length - 1})`, `Whole list (${m.shopping.length})`]);
+  assert(tabs[0].classList.contains('active'), 'still needed is the default');
+  let preview = modal().querySelector('.list-preview').textContent;
+  assert(preview.startsWith(`${m.name}: still needed`), preview);
+  assert(!preview.includes(first.name), 'checked item left out');
+  assert(preview.includes(`\n${m.shopping[1].group}\n• ${m.shopping[1].name}`), 'grouped with bullets');
+  modal().querySelector('.primary').click();
+  let call = bridgeCalls('shareText').pop();
+  eq(call[3], `${m.name}: shopping list`, 'email subject');
+  eq(call[1], preview);
+  assert(!modalOpen(), 'dialog closes');
+  shareListModal('all');
+  let all = modal().querySelector('.list-preview').textContent;
+  assert(all.startsWith(`${m.name}: shopping list`) && all.includes(`✓ ${first.name}`), 'whole list marks checked items');
+  copyList('all');
+  eq(bridgeCalls('copyText').pop()[1], all);
+});
+
+test('with everything checked, Share list offers only the whole list', () => {
+  go('shopping');
+  meals[0].shopping.forEach(x => x.checked = true);
+  shareListModal();
+  let tabs = modal().querySelectorAll('.tab');
+  assert(tabs[0].disabled && tabs[1].classList.contains('active'), 'whole list chosen');
+});
+
 test('meals without a timeline show an empty state', () => {
   selectedMeal = 3;
   go('timeline');

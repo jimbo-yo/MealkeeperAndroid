@@ -10,8 +10,8 @@ window.MealkeeperAndroid = {
   openBackupFile() {
     this.calls.push(['openBackupFile']);
   },
-  shareText(text, title) {
-    this.calls.push(['shareText', text, title]);
+  shareText(text, title, subject) {
+    this.calls.push(['shareText', text, title, subject]);
   },
   // Whether a clock app takes setAlarm (tests set this).
   alarmResult: true,

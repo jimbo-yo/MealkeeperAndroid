@@ -355,7 +355,7 @@ class MainActivity : Activity() {
                     startActivityForResult(intent, REQUEST_EXPORT_BACKUP)
                 } catch (e: ActivityNotFoundException) {
                     pendingBackupJson = null
-                    shareText(json, "Save Prompt to Pan backup")
+                    shareText(json, "Save Prompt to Pan backup", "")
                 }
             }
         }
@@ -444,13 +444,15 @@ class MainActivity : Activity() {
                 .putExtra(AlarmClock.EXTRA_SKIP_UI, false)
         )
 
+        // subject, if any, becomes an email's subject line.
         @JavascriptInterface
-        fun shareText(text: String, title: String) {
+        fun shareText(text: String, title: String, subject: String) {
             runOnUiThread {
                 try {
                     val sendIntent = Intent(Intent.ACTION_SEND).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         putExtra(Intent.EXTRA_TEXT, text)
+                        if (subject.isNotEmpty()) putExtra(Intent.EXTRA_SUBJECT, subject)
                         type = "text/plain"
                     }
                     val shareIntent = Intent.createChooser(sendIntent, title.ifEmpty { "Share via" })
