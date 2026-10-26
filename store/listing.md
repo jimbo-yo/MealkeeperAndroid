@@ -73,4 +73,13 @@ API use is billed by the AI provider to your own account (an app subscription su
 
 ## Release notes for the first version
 
-First release: plan meals with Claude, ChatGPT or Grok (in the app with your own API key, or in their apps), then cook from recipes, shopping lists and timelines.
+Paste into the release's notes box as-is (500 characters max; the tags set the language):
+
+<en-US>
+Welcome to Prompt to Pan, the first release!
+• Plan meals with Claude, ChatGPT or Grok in the in-app chat (with your own API key) or in their apps
+• Tap Send to pan and the meal lands with its recipes, shopping list and cooking timeline
+• Set an alarm for when it's time to start cooking
+• Share your shopping list, or just what you still need, by email or chat
+• No account, no ads, no tracking
+</en-US>
