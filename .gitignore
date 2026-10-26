@@ -2,3 +2,8 @@
 /.gradle/
 /app/build/
 /build/
+
+# Release signing: the upload key's passwords and the key itself never go in git.
+/keystore.properties
+*.jks
+*.keystore
