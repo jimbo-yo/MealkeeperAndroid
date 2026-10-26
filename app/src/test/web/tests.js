@@ -833,6 +833,7 @@ test('Appearance switches to soft olive, tells Android, and is saved', () => {
 test('the name uses the bundled script font', () => {
   let brand = getComputedStyle(document.querySelector('.brand'));
   assert(brand.fontFamily.includes('Satisfy'), brand.fontFamily);
+  assert(getComputedStyle(document.querySelector('.brand-prompt')).fontFamily.includes('Space Mono'), 'Prompt in Space Mono');
   eq(document.querySelector('.brand').textContent.trim(), 'Prompt to Pan');
 });
 
