@@ -17,6 +17,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
+import android.provider.AlarmClock
 import android.os.Looper
 import android.view.View
 import android.view.WindowInsets
@@ -431,6 +432,17 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun aiCancel(id: String) = aiApi.cancel(id)
+
+        // Opens the Clock app's new-alarm screen filled in, so the user confirms it there. Returns false if no clock
+        // app takes the request. Clock apps set it for the next time the clock shows that time.
+        @JavascriptInterface
+        fun setAlarm(hour: Int, minutes: Int, label: String): Boolean = startOther(
+            Intent(AlarmClock.ACTION_SET_ALARM)
+                .putExtra(AlarmClock.EXTRA_HOUR, hour)
+                .putExtra(AlarmClock.EXTRA_MINUTES, minutes)
+                .putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                .putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+        )
 
         @JavascriptInterface
         fun shareText(text: String, title: String) {

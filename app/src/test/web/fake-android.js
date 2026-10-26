@@ -13,6 +13,12 @@ window.MealkeeperAndroid = {
   shareText(text, title) {
     this.calls.push(['shareText', text, title]);
   },
+  // Whether a clock app takes setAlarm (tests set this).
+  alarmResult: true,
+  setAlarm(hour, minutes, label) {
+    this.calls.push(['setAlarm', hour, minutes, label]);
+    return this.alarmResult;
+  },
   // What sendToAiApp reports: 'shared', 'opened' or 'missing' (tests set this).
   aiAppResult: 'shared',
   sendToAiApp(ai, text) {

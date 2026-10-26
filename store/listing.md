@@ -22,6 +22,7 @@ COOK FROM YOUR PHONE
 • Every recipe with its ingredients, steps and times
 • A shopping list that combines ingredients across the meal's recipes, with check-offs
 • A cooking timeline that works back from when you want to eat, so everything is ready together
+• An alarm in your Clock app for when it's time to start cooking
 • Keep-awake mode so the screen stays on while you cook
 
 KEEP TALKING TO YOUR AI

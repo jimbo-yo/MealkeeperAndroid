@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Only for chatting with the AI the user connects with their own API key (AiApi). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets the timeline hand a start-cooking alarm to the Clock app (a normal permission: no prompt). -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <!-- Lets MainActivity find the ChatGPT, Claude and Grok apps (Android 11+ package visibility); see AI_APPS. -->
     <queries>
         <package android:name="com.openai.chatgpt" />

@@ -37,6 +37,7 @@ function reset() {
   appearance = 'light';
   clipOffer = true;
   bridge.aiAppResult = 'shared';
+  bridge.alarmResult = true;
   bridge.keys = {};
   refreshAiKeys();
   Object.keys(aiCalls).forEach(id => delete aiCalls[id]);
@@ -186,6 +187,20 @@ test('timeline works back from the serving time', () => {
   setServeAt('19:00');
   eq(times()[0], '6:05 PM');
   eq(meals[0].serveAt, '19:00');
+});
+
+test('the timeline sets an alarm in the Clock app for when cooking starts', () => {
+  go('timeline');
+  let button = [...main().querySelectorAll('button')].find(b => b.textContent.includes('Set alarm'));
+  eq(button.textContent, '⏰ Set alarm for 5:35 PM');
+  button.click();
+  eq(bridgeCalls('setAlarm').pop(), ['setAlarm', 17, 35, `Start cooking: ${meals[0].name}`]);
+  setServeAt('00:10');
+  setStartAlarm();
+  eq(bridgeCalls('setAlarm').pop().slice(1, 3), [23, 15], 'a start before midnight wraps to the day before');
+  bridge.alarmResult = false;
+  setStartAlarm();
+  eq(document.getElementById('toast').textContent, 'No clock app found to set the alarm.');
 });
 
 test('check marks belong to the selected meal', () => {

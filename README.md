@@ -40,6 +40,7 @@ The tests load the real `index.html` with `fake-android.js` before `app.js` and 
 ## Current behavior and limitations
 
 - The interface is bundled locally. The only network use is the in-app chat, and only after the user adds an API key.
+- **Set alarm** on the timeline opens the Clock app's new-alarm screen (`AlarmClock.ACTION_SET_ALARM`) filled in for when cooking starts, labelled with the meal.
 - The screen stays on (`FLAG_KEEP_SCREEN_ON`) while a cooking timeline or recipe is open; Settings can turn that off or keep the screen on all the time.
 - The app draws edge-to-edge with transparent system bars. **Settings → Appearance** chooses Light (linen, the default), Dark (soft olive) or Match phone: the page sets `data-theme` on `<html>` and its colours come from the theme variables at the top of `app.css`; `MainActivity` matches the system bar icons and window background. It passes the status-bar, navigation-bar and keyboard heights to the page as `--android-safe-top`, `--android-safe-bottom` and `--android-ime-bottom`.
 - The app name is set in Space Mono Bold ("Prompt", with a blinking cursor; SIL OFL 1.1) and Satisfy ("to Pan"; Apache 2.0), both bundled in `assets/fonts/`.
