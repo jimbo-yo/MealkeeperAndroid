@@ -69,3 +69,7 @@ The store listing text, Play Console form answers and graphics are in `store/`. 
 
 1. Move storage from `localStorage` to Room (or IndexedDB) once the data model settles.
 2. Define Kotlin data classes for meals, recipes, ingredients, and timeline steps.
+
+## License
+
+MIT; see `LICENSE`. The bundled Satisfy font is under the Apache License 2.0 (`app/src/main/assets/fonts/Satisfy-LICENSE.txt`).
