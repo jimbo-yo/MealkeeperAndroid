@@ -50,9 +50,20 @@ The tests load the real `index.html` with `fake-android.js` before `app.js` and 
 
 ## Release builds
 
-`assembleRelease` shrinks with R8 (the default rules keep the `@JavascriptInterface` bridge methods). Before publishing:
+Release builds shrink with R8 (the default rules keep the `@JavascriptInterface` bridge methods) and are signed with the Play upload key when `keystore.properties` exists in the project root:
 
-1. Add a `signingConfig` for release; the build currently produces `app-release-unsigned.apk`.
+```properties
+storeFile=/home/you/keystores/prompttopan-upload.jks
+storePassword=...
+keyAlias=upload
+keyPassword=...
+```
+
+That file and the keystore stay out of git. Back them up together: losing the upload key means asking Google to reset it. Without the file, release builds come out unsigned.
+
+For each Play upload, raise `versionCode` in `app/build.gradle.kts` (and `versionName` if you like), then run `./gradlew bundleRelease` and upload `app/build/outputs/bundle/release/app-release.aab`.
+
+The store listing text, Play Console form answers and graphics are in `store/`. The privacy policy is `docs/privacy.html`, served by GitHub Pages.
 
 ## Suggested next steps
 
