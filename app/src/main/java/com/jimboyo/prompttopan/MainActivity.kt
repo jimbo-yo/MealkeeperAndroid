@@ -1,4 +1,4 @@
-package com.example.mealkeeper
+package com.jimboyo.prompttopan
 
 import android.annotation.SuppressLint
 import android.app.Activity

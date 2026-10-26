@@ -1,4 +1,4 @@
-package com.example.mealkeeper
+package com.jimboyo.prompttopan
 
 import android.content.ContentProvider
 import android.content.ContentValues

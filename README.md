@@ -2,7 +2,7 @@
 
 Prompt to Pan is the cooking side of planning meals with AI: brainstorm a meal in ChatGPT or Claude, send it here, and cook from its recipes, shopping list and timeline.
 
-The app was originally called Mealkeeper. Internal names (the `mealkeeper-v1` format and `mealkeeper_id`, storage keys, the `MealkeeperAndroid` JavaScript bridge, `Theme.Mealkeeper`, the `com.example.mealkeeper` package) keep that name so saved data, backups and earlier AI exports still work.
+The app was originally called Mealkeeper. Internal names (the `mealkeeper-v1` format and `mealkeeper_id`, storage keys, the `MealkeeperAndroid` JavaScript bridge, `Theme.Mealkeeper`) keep that name so saved data, backups and earlier AI exports still work. The app ID and Kotlin package are `com.jimboyo.prompttopan`; builds from before the rename used `com.example.mealkeeper` and install as a separate app, so move meals across with a backup.
 
 ## Open it
 
@@ -16,7 +16,7 @@ The first Gradle sync needs internet access to download the Android Gradle Plugi
 
 ## Project structure
 
-- `app/src/main/java/com/example/mealkeeper/MainActivity.kt` — Android Activity: hosts the WebView, edge-to-edge insets, the `MealkeeperAndroid` JavaScript bridge (keep-awake, sharing, backup files) and the back button.
+- `app/src/main/java/com/jimboyo/prompttopan/MainActivity.kt` — Android Activity: hosts the WebView, edge-to-edge insets, the `MealkeeperAndroid` JavaScript bridge (keep-awake, sharing, backup files) and the back button.
 - `app/src/main/assets/` — the app's UI, loaded from `file:///android_asset/index.html`:
   - `index.html` — page shell (top bar, bottom nav, modal, toast).
   - `app.css` — styles (phone layout; light and dark).
@@ -52,8 +52,7 @@ The tests load the real `index.html` with `fake-android.js` before `app.js` and 
 
 `assembleRelease` shrinks with R8 (the default rules keep the `@JavascriptInterface` bridge methods). Before publishing:
 
-1. Replace `com.example.mealkeeper` as the `applicationId` (and ideally `namespace`). Changing it installs as a separate app, so data saved by the old ID won't carry over; export a backup first.
-2. Add a `signingConfig` for release; the build currently produces `app-release-unsigned.apk`.
+1. Add a `signingConfig` for release; the build currently produces `app-release-unsigned.apk`.
 
 ## Suggested next steps
 
