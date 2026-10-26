@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompt to Pan</title>
+<meta name="description" content="Plan meals with Claude, ChatGPT or Grok, then cook from recipes, shopping lists and timelines.">
+<link rel="icon" href="icon.png">
+<style>
+  @font-face { font-family: Satisfy; src: url(fonts/Satisfy-Regular.woff2) format("woff2"); font-display: swap; }
+  :root { --bg: #F3EADB; --surface: #FBF7F0; --line: #E4D9C6; --text: #2B2A26; --muted: #6B665C; --accent: #496548; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #232A24; --surface: #2E372F; --line: #3B463C; --text: #EFE8DA; --muted: #B5AE9F; --accent: #9CC29A; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.6 system-ui, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 40px 16px 64px; }
+  header { display: flex; align-items: center; gap: 16px; }
+  header img { width: 72px; height: 72px; border-radius: 18px; }
+  h1 { font: 400 2.6em/1.1 Satisfy, cursive; color: var(--accent); margin: 0; }
+  .lead { font-size: 1.2em; margin: 24px 0 32px; }
+  .features { display: grid; gap: 12px; padding: 0; list-style: none; }
+  .features li { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; }
+  .features strong { display: block; }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+  footer { margin-top: 40px; display: flex; flex-wrap: wrap; gap: 8px 20px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <img src="icon.png" alt="">
+  <h1>Prompt to Pan</h1>
+</header>
+
+<p class="lead">The cooking side of planning meals with AI. Brainstorm a dinner with Claude, ChatGPT or Grok, then cook from its recipes, shopping list and timeline.</p>
+
+<ul class="features">
+  <li><strong>Plan it in a chat</strong><span class="muted">Chat in the app with your own API key. When the plan is right, tap Send to pan and the meal lands in your collection. Or use the AI's own app and bring the meal over with a tap.</span></li>
+  <li><strong>Cook from your phone</strong><span class="muted">Recipes with every step and time, a shopping list that combines the whole meal, and a timeline that works back from when you want to eat.</span></li>
+  <li><strong>Private by design</strong><span class="muted">No account, no ads, no tracking. Your meals stay on your phone, and chat messages go straight to the AI you connect.</span></li>
+</ul>
+
+<p class="muted">Coming soon to Google Play for Android.</p>
+
+<footer>
+  <a href="privacy.html">Privacy policy</a>
+  <a href="mailto:prompttopan.support@gmail.com">prompttopan.support@gmail.com</a>
+  <a href="https://github.com/jimbo-yo/MealkeeperAndroid">Source on GitHub</a>
+</footer>
+</main>
+</body>
+</html>
