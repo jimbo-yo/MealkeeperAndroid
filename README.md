@@ -37,6 +37,12 @@ scripts/run-web-tests.sh --keep   # also keeps the test page so you can open it 
 
 The tests load the real `index.html` with `fake-android.js` before `app.js` and `tests.js` after it. They need Firefox installed. You can also open the page in a browser without Android: the app falls back to browser features (downloads, file picker, clipboard) where the bridge is missing.
 
+## Web app
+
+The same interface can run as a standalone browser app. Build a local copy with `bash scripts/build-web.sh`, then serve `build/web` over HTTP (for example, `python3 -m http.server 8000 --directory build/web`) and open `http://localhost:8000/app/`. The web app can be installed from supported browsers and caches its interface for offline use.
+
+The GitHub Pages workflow publishes the web app alongside the privacy policy. Set the repository's Pages source to **GitHub Actions** to enable deployment. Meals and settings stay in that browser's local storage; use **Settings → Backup & restore** to move data between devices. The browser version opens ChatGPT, Claude, or Grok in a separate tab. Direct API-key chat is Android-only because it relies on the Android app's encrypted key storage.
+
 ## Current behavior and limitations
 
 - The interface is bundled locally. The only network use is the in-app chat, and only after the user adds an API key.

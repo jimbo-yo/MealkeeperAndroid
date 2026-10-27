@@ -298,6 +298,28 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun launchMealShare(fileName: String, json: String, text: String, subject: String, chooserTitle: String) {
+        runOnUiThread {
+            val dir = SharedMealProvider.sharedDir(this@MainActivity)
+            // Keep recent files available if an email draft attaches them later, but don't let them pile up.
+            dir.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > SHARED_FILE_MAX_AGE_MS }?.forEach { it.delete() }
+            val file = File(dir, fileName.replace(Regex("[^A-Za-z0-9 ._()&'-]"), "_").take(100))
+            file.writeText(json)
+            val uri = SharedMealProvider.uriFor(this@MainActivity, file)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TEXT, text)
+                putExtra(Intent.EXTRA_SUBJECT, subject)
+                clipData = ClipData.newRawUri(subject, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val chooser = Intent.createChooser(send, chooserTitle)
+                .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(this@MainActivity, MainActivity::class.java)))
+            startOther(chooser)
+        }
+    }
+
     inner class MealkeeperBridge {
         @JavascriptInterface
         fun copyText(text: String) {
@@ -308,25 +330,12 @@ class MainActivity : Activity() {
         // anyone without the app. The file is served by SharedMealProvider.
         @JavascriptInterface
         fun shareMeal(fileName: String, json: String, text: String, title: String) {
-            runOnUiThread {
-                val dir = SharedMealProvider.sharedDir(this@MainActivity)
-                // Keep recent files a while (an email draft may attach it later), but don't let them pile up.
-                dir.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > SHARED_FILE_MAX_AGE_MS }?.forEach { it.delete() }
-                val file = File(dir, fileName.replace(Regex("[^A-Za-z0-9 ._()&'-]"), "_").take(100))
-                file.writeText(json)
-                val uri = SharedMealProvider.uriFor(this@MainActivity, file)
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "application/json"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    putExtra(Intent.EXTRA_TEXT, text)
-                    putExtra(Intent.EXTRA_SUBJECT, title)
-                    clipData = ClipData.newRawUri(title, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                val chooser = Intent.createChooser(send, "Share $title")
-                    .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(this@MainActivity, MainActivity::class.java)))
-                startOther(chooser)
-            }
+            launchMealShare(fileName, json, text, title, "Share $title")
+        }
+
+        @JavascriptInterface
+        fun emailMeal(fileName: String, json: String, body: String, subject: String) {
+            launchMealShare(fileName, json, body, subject, "Email $subject")
         }
 
         @JavascriptInterface

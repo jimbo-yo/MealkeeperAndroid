@@ -1,4 +1,4 @@
-/* Prompt to Pan styles. The app always uses its phone layout; wider screens show it as a centred column.
+/* Prompt to Pan styles. Phones use bottom navigation; wider screens use a side rail and workspace.
    Colours use light-dark(), which follows the system theme (on Android, via Theme.Mealkeeper's night variant).
    MainActivity sets --android-safe-top / --android-safe-bottom to the status- and navigation-bar heights, and
    --android-ime-bottom to the keyboard's height while it's open.
@@ -85,12 +85,21 @@ button:active {
   color: light-dark(#1d211c, #e5e8e1);
 }
 
+.web-notice {
+  padding: 8px 12px;
+  background: #d2704a;
+  color: #1d211c;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .topbar {
   min-height: 68px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(var(--android-safe-top, 44px) + 10px) 12px 10px;
+  padding: calc(var(--android-safe-top, 0px) + 10px) 12px 10px;
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
@@ -185,7 +194,7 @@ button:active {
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  font-size: 10px;
+  font-size: 11px;
   padding: 4px 2px;
 }
 
@@ -807,11 +816,11 @@ textarea.field {
   }
 
   .mobile-nav button {
-    font-size: 9px;
+    font-size: 10px;
   }
 }
 
-/* ---- Wide screens (tablets, landscape, desktop browsers): centre the phone layout ---- */
+/* ---- Wide screens ---- */
 
 @media (min-width: 761px) {
   body {
@@ -819,18 +828,66 @@ textarea.field {
   }
 
   .app {
-    max-width: 430px;
+    max-width: 1200px;
+    min-height: 100vh;
     margin: 0 auto;
-    box-shadow: 0 0 0 1px #d8dbd1, 0 12px 50px #0002;
-    position: relative;
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .topbar {
+    grid-column: 1 / -1;
+    padding: 10px 24px;
+  }
+
+  .main {
+    grid-column: 2;
+    grid-row: 2;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 34px clamp(24px, 5vw, 64px) 100px;
   }
 
   .mobile-nav {
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-    width: 100%;
-    max-width: 430px;
+    position: sticky;
+    top: 68px;
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+    height: calc(100vh - 68px);
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 18px 10px;
+    border-top: 0;
+    border-right: 1px solid var(--line);
+  }
+
+  .mobile-nav button {
+    flex: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .mobile-nav button.active {
+    background: var(--button-2);
+  }
+
+  .mobile-nav span {
+    width: 22px;
+    font-size: 18px;
+    text-align: center;
+  }
+
+  .composer {
+    left: max(200px, calc((100vw - 1200px) / 2 + 200px));
+    right: max(0px, calc((100vw - 1200px) / 2));
+    bottom: 0;
   }
 }
 

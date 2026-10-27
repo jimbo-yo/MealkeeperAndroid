@@ -586,7 +586,7 @@ function scrollChatToEnd() {
 
 function chatPage() {
   let ai = chat ? chat.ai : myAi, name = AI_GUIDES[ai].name;
-  if (!hasApi()) return `<div class="eyebrow">CHAT</div><h1 class="headline">Chat with your AI</h1>${emptyPanel('✦', 'Chat works in the Android app', 'In the app, add your own API key to chat with Claude, ChatGPT or Grok here.')}`;
+  if (!hasApi()) return `<div class="eyebrow">CHAT</div><h1 class="headline">Chat with your AI</h1><div class="panel"><strong>Continue in ${name}</strong><p class="muted small" style="line-height:1.5;margin:6px 0 12px">This web version opens ${name} in a separate tab. Bring a meal back with Import recipes. In-app API-key chat is available in the Android app.</p><div class="actions"><button class="primary" onclick="openAi('${ai}')">Open ${name} ↗</button><button class="secondary" onclick="go('ai')">Plan with AI</button></div></div>`;
   let head = `<div class="spread" style="align-items:flex-start;flex-wrap:nowrap"><div><div class="eyebrow">CHAT WITH ${name.toUpperCase()}</div><h1 class="headline">Plan it here</h1></div>${chat && chat.items.length ? `<button class="outline" onclick="confirmCloseChat()">✕ Close</button>` : ''}</div>`;
   if (!hasKey(ai)) return `${head}<div class="panel"><strong>Connect ${name} to chat here</strong><p class="muted small" style="line-height:1.5;margin:6px 0 12px">With your own ${AI_APIS[ai].provider} API key, ${name} plans meals right in Prompt to Pan and they land in your meals, no copying. Or keep using the ${name} app: see Plan with AI.</p><div class="actions"><button class="primary" onclick="keyModal('${ai}')">Add API key</button><button class="secondary" onclick="go('ai')">Plan with AI</button></div></div>`;
   let items = chat ? chat.items : [],

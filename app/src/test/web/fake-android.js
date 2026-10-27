@@ -35,6 +35,9 @@ window.MealkeeperAndroid = {
   shareMeal(fileName, json, text, title) {
     this.calls.push(['shareMeal', fileName, json, text, title]);
   },
+  emailMeal(fileName, json, body, subject) {
+    this.calls.push(['emailMeal', fileName, json, body, subject]);
+  },
   setAppearance(mode) {
     this.calls.push(['setAppearance', mode]);
   },

@@ -615,7 +615,18 @@ const PAGES = {
 
 function render() {
   document.querySelectorAll('[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === page));
-  document.getElementById('main').innerHTML = (PAGES[page] || home)();
+  let main = document.getElementById('main');
+  main.innerHTML = (PAGES[page] || home)();
+  if (page === 'meal') {
+    let actions = main.querySelector('.spread .actions');
+    if (actions) {
+      let button = document.createElement('button');
+      button.className = 'outline';
+      button.textContent = '✉ Email';
+      button.onclick = emailMeal;
+      actions.insertBefore(button, actions.children[2] || null);
+    }
+  }
   saveState();
   syncAwake();
   syncClipOffer();
@@ -957,6 +968,22 @@ function shareMeal() {
     downloadFile(name, json);
     notify('Meal file downloaded');
   }
+}
+
+function emailMeal() {
+  let m = currentMeal();
+  if (!m) return;
+  let v1 = toV1Meal(m);
+  delete v1.mealkeeper_id;
+  let json = JSON.stringify({format: 'mealkeeper-v1', meals: [v1]}, null, 1),
+    name = `${m.name}.prompttopan.json`,
+    subject = m.name,
+    body = `To import this meal, open the attached file with Prompt to Pan and confirm the import. The attachment includes the recipes, shopping list, and cooking timeline.\n\n${mealText(m)}`,
+    android = window.MealkeeperAndroid;
+  if (android && android.emailMeal) return android.emailMeal(name, json, body, subject);
+  downloadFile(name, json);
+  openUrl(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+  notify('Meal file downloaded. Attach it to the email draft.');
 }
 
 function mealText(m) {

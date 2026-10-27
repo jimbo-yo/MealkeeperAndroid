@@ -18,6 +18,7 @@ openUrl = url => opened.push(url);
 
 function reset() {
   localStorage.clear();
+  opened.length = 0;
   closeModal();
   meals.length = 0;
   DEMO_MEALS.map(cleanMeal).forEach(m => meals.push(m));
@@ -384,6 +385,34 @@ test('Share sends an importable meal file and a readable version', () => {
   assert(text.startsWith('Sunday Italian supper (serves 3, 55 min)'), text.slice(0, 60));
   assert(text.includes('Sausage & pepper rigatoni (Main), serves 3') && text.includes('- 1 lb Italian sausage links'), 'recipes in the text');
   assert(text.endsWith('cooking timeline too.'), 'note about the file');
+});
+
+test('Email attaches an importable meal and explains how to add it', () => {
+  openMeal(1);
+  [...main().querySelectorAll('button')].find(b => b.textContent.includes('Email')).click();
+  let [, fileName, json, body, subject] = bridgeCalls('emailMeal')[0];
+  eq([fileName, subject], ['Sunday Italian supper.prompttopan.json', 'Sunday Italian supper']);
+  eq('mealkeeper-v1', JSON.parse(json).format);
+  assert(body.startsWith('To import this meal, open the attached file with Prompt to Pan'), body.slice(0, 100));
+  assert(body.includes('Sausage & pepper rigatoni') && body.includes('shopping list'), 'email includes meal details');
+});
+
+test('Email on the web downloads the file and opens a prefilled draft', () => {
+  const originalEmailMeal = bridge.emailMeal, originalDownloadFile = downloadFile, downloads = [];
+  bridge.emailMeal = undefined;
+  downloadFile = (name, data) => downloads.push([name, data]);
+  try {
+    openMeal(1);
+    emailMeal();
+  } finally {
+    bridge.emailMeal = originalEmailMeal;
+    downloadFile = originalDownloadFile;
+  }
+  eq(1, downloads.length);
+  eq('Sunday Italian supper.prompttopan.json', downloads[0][0]);
+  let draft = new URL(opened[0]);
+  eq([draft.protocol, draft.searchParams.get('subject')], ['mailto:', 'Sunday Italian supper']);
+  assert(draft.searchParams.get('body').includes('open the attached file with Prompt to Pan'));
 });
 
 test('a shared meal file arrives as an import offer', () => {
