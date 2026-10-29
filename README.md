@@ -17,12 +17,13 @@ The first Gradle sync needs internet access to download the Android Gradle Plugi
 ## Project structure
 
 - `app/src/main/java/com/jimboyo/prompttopan/MainActivity.kt` — Android Activity: hosts the WebView, edge-to-edge insets, the `MealkeeperAndroid` JavaScript bridge (keep-awake, sharing, backup files) and the back button.
+- `app/src/main/java/com/jimboyo/prompttopan/Voice.kt` — voice mode for the chat: Android's speech recognizer for the mic button and text-to-speech for replies.
 - `app/src/main/java/com/jimboyo/prompttopan/AiApi.kt` — the user's AI API keys (encrypted with the Android Keystore, left out of backups) and the HTTPS calls that use them.
 - `app/src/main/assets/` — the app's UI, loaded from `file:///android_asset/index.html`:
   - `index.html` — page shell (top bar, bottom nav, modal, toast).
   - `app.css` — styles (phone layout; light and dark).
   - `app.js` — app logic, grouped into sections: state, helpers, meal data and import, saving and backups, navigation, screens, actions.
-  - `chat.js` — the in-app chat with Claude, ChatGPT or Grok, and the `save_meal` tool that puts meals straight into the app.
+  - `chat.js` — the in-app chat with Claude, ChatGPT or Grok, the `save_meal` tool that puts meals straight into the app, and voice mode (with `Voice.kt`).
   - `demo-data.js` — demo meals for first launch and the example `mealkeeper-v1` export used in the AI prompt.
 - `app/src/main/res/` — theme (with a night variant) and the adaptive launcher icon.
 - `app/src/test/web/` — browser tests for `app.js`, plus a fake Android bridge.
@@ -56,6 +57,7 @@ The GitHub Pages workflow publishes the web app alongside the privacy policy. Se
 - **Plan with AI** gives ChatGPT and Claude standing project instructions (`AI_SETUP_INSTRUCTIONS` in `app.js`): the user brainstorms normally, then says "send it to the pan" to get one JSON code block. When the app comes back to the front with a newly copied export, `MainActivity` hands it to the page, which offers to import it (Settings can turn this off).
 - **Revise with AI** sends a meal (with its `mealkeeper_id`) and a request to a new chat; when the reply comes back, the import offers to update that meal, keeping the serving time and check marks on items still listed. **Ask AI** on a recipe or timeline step sends it as readable text with a question. On Android, prompts are shared straight to the ChatGPT or Claude app (`sendToAiApp` in `MainActivity`), which opens a new chat with the prompt in the message box; without the app, a web chat opens instead.
 - **Chat** talks to the AI directly with the user's own API key (**Settings → AI accounts**). Claude uses Anthropic's Messages API (default model `claude-opus-5-5`, with `fallbacks: "default"`); ChatGPT and Grok use the Responses API at OpenAI and xAI (defaults `gpt-6-sol` and `grok-4.7`; the model list comes from each account's `/v1/models`). `chat.js` builds the requests and reads the streamed replies; `AiApi.kt` adds the key and streams the server-sent events back to the page, so keys never reach the WebView. The AI gets a `save_meal` tool whose input is one `mealkeeper-v1` meal: when it calls it, the meal is added (or, with a `mealkeeper_id`, updated) without the user seeing any JSON. With a key, **Revise with AI** and **Ask AI** answer in this chat instead of opening the AI's app. **Send to pan** asks the AI to save the meal now (ChatGPT and Grok must call `save_meal`); **Report** on a reply emails it to prompttopan.support@gmail.com, as Google Play's AI-generated content policy requires; **Close** clears the conversation.
+- **Voice** in the chat (Android, when the phone has a speech recognizer): the mic sends what the user says when they stop talking, the reply is read aloud, and the mic opens again, until Stop, a silence, or leaving the chat. It asks for `RECORD_AUDIO` on first use; the phone's own speech services do the recognition, and the app only gets the text.
 - This is a WebView-based starter so you can begin working in Android Studio right away. You can gradually migrate screens to native Kotlin/Jetpack Compose later.
 
 ## Release builds

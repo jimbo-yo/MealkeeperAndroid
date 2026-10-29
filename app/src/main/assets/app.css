@@ -1082,3 +1082,32 @@ textarea.field {
   justify-content: center;
   font-size: 16px;
 }
+
+.composer .mic {
+  display: inline-flex;
+  align-items: center;
+}
+
+.composer .mic svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Listening (see the voice section of chat.js): tapping again sends what was said. */
+.composer .mic.listening {
+  background: #b5452b;
+  border-color: #b5452b;
+  color: white;
+  animation: listening 1.4s infinite ease-in-out;
+}
+
+@keyframes listening {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(181 69 43 / .45); }
+  50% { box-shadow: 0 0 0 7px rgb(181 69 43 / 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer .mic.listening {
+    animation: none;
+  }
+}

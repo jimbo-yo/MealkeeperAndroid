@@ -628,6 +628,7 @@ function render() {
     }
   }
   saveState();
+  syncVoice();
   syncAwake();
   syncClipOffer();
   syncAppearance();
@@ -1285,7 +1286,7 @@ function cookingView() {
 }
 
 function syncAwake() {
-  let want = awake || (cookAwake && cookingView());
+  let want = awake || voiceOn || (cookAwake && cookingView());
   if (want === lastAwake) return;
   lastAwake = want;
   if (window.MealkeeperAndroid && window.MealkeeperAndroid.setKeepScreenOn) window.MealkeeperAndroid.setKeepScreenOn(want)

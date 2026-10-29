@@ -65,5 +65,22 @@ window.MealkeeperAndroid = {
   },
   aiCancel(id) {
     this.calls.push(['aiCancel', id]);
+  },
+  // Whether the phone has a speech recognizer (tests set this); tests answer through window.onVoice.
+  voice: false,
+  voiceAvailable() {
+    return this.voice;
+  },
+  voiceListen() {
+    this.calls.push(['voiceListen']);
+  },
+  voiceFinishListening() {
+    this.calls.push(['voiceFinishListening']);
+  },
+  voiceSpeak(text) {
+    this.calls.push(['voiceSpeak', text]);
+  },
+  voiceStop() {
+    this.calls.push(['voiceStop']);
   }
 };

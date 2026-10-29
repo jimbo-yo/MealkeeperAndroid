@@ -336,6 +336,7 @@ function sendFromComposer() {
 function sendChat(text, prompt, about, mustSave) {
   let ai = chat.ai, api = AI_APIS[ai], model = aiModel(ai), path, body;
   chatError = null;
+  if (voiceState === 'listening') endVoice();
   chat.items.push({role: 'user', text, about: about || ''});
   let turn = {ai, format: api.format, text: '', blocks: [], calls: [], stop: null, error: null, writing: false, retry: {text, prompt, about, mustSave}};
   if (api.format === 'messages') {
@@ -438,7 +439,7 @@ function turnProblem(t, status, body) {
 function finishTurn(t, status, body) {
   if (chatTurn !== t) return;
   chatTurn = null;
-  let problem = turnProblem(t, status, body);
+  let problem = turnProblem(t, status, body), before = chat.items.length;
   if (t.format === 'messages') {
     let content = claudeContent(t.blocks);
     if (!problem && !content.length) problem = `${AI_GUIDES[t.ai].name} didn't reply. Try again.`;
@@ -462,6 +463,7 @@ function finishTurn(t, status, body) {
       return {type: 'function_call_output', call_id: c.call_id, output: r.error || r.text};
     });
   }
+  if (voiceOn) readAloud(chat.items.slice(before));
   render();
 }
 
@@ -484,6 +486,7 @@ function failTurn(t, text) {
   let i = chat.items.length - 1;
   if (chat.items[i] && chat.items[i].role === 'user') chat.items.splice(i, 1);
   chatError = {text, retry: t.retry};
+  endVoice();
   render();
 }
 
@@ -502,6 +505,116 @@ function stopChat() {
   if (chat.items[i] && chat.items[i].role === 'user') chat.items.splice(i, 1);
   if (t.retry.text === t.retry.prompt) chatDraft = t.retry.text;
   if (page === 'chat') render();
+}
+
+// ---- Voice ----
+
+// Talking instead of typing (Android only; see Voice.kt). The mic starts voice mode: what the user says is sent
+// when they stop talking, the reply is read aloud, and then the mic opens again, so the conversation goes on
+// hands-free. It ends with Stop, a pause with nothing said, or leaving the chat. The screen stays on meanwhile
+// (see syncAwake in app.js).
+let voiceOn = false,
+  voiceState = '',       // 'listening' or 'speaking'
+  voiceDraft = '',       // what was in the message box when the mic opened; what's heard is added to it
+  canTalk = null;        // whether the phone has a speech recognizer (checked once)
+
+const VOICE_ERRORS = {
+  silence: 'Didn\'t hear anything. Tap the mic to talk.',
+  denied: 'Prompt to Pan needs the microphone to hear you. You can allow it in Settings → Apps → Prompt to Pan → Permissions.',
+  network: 'Couldn\'t reach the speech recognizer. Check your connection, or type instead.'
+};
+
+function hasVoice() {
+  if (canTalk === null) canTalk = hasApi() && !!window.MealkeeperAndroid.voiceAvailable && window.MealkeeperAndroid.voiceAvailable();
+  return canTalk;
+}
+
+// The mic button: opens the mic, cuts in on a reply being read out, or (while listening) sends what's been said.
+function tapMic() {
+  if (voiceState === 'listening') window.MealkeeperAndroid.voiceFinishListening();
+  else startListening();
+}
+
+function startListening() {
+  if (chatTurn || page !== 'chat') return endVoice();
+  voiceOn = true;
+  voiceState = 'listening';
+  voiceDraft = chatDraft.trim();
+  window.MealkeeperAndroid.voiceListen();
+  render();
+}
+
+// Leaves voice mode; the caller re-renders.
+function endVoice() {
+  if (!voiceOn) return;
+  voiceOn = false;
+  voiceState = '';
+  window.MealkeeperAndroid.voiceStop();
+}
+
+// The composer's Stop button: ends the reply being written and voice mode.
+function stopTalking() {
+  endVoice();
+  if (chatTurn) stopChat();
+  else render();
+}
+
+// Voice mode ends when the user leaves the chat.
+function syncVoice() {
+  if (voiceOn && page !== 'chat') endVoice();
+}
+
+// What's read out for a finished turn: the reply as plain text, and any meals it saved.
+function readAloud(items) {
+  let text = items.map(i => i.role === 'assistant' ? spokenText(i.text) : i.role === 'meal' ? `${i.updated ? 'Updated' : 'Added'} ${i.name}${i.updated ? '' : ' to your meals'}.` : '').filter(Boolean).join('\n');
+  if (!text) return startListening();
+  voiceState = 'speaking';
+  window.MealkeeperAndroid.voiceSpeak(text);
+}
+
+function spokenText(text) {
+  return text.replace(/```[\s\S]*?(```|$)/g, '').replace(/^\s*#{1,6}\s+/gm, '').replace(/^\s*[-*•]\s+/gm, '').replace(/[*`]/g, '');
+}
+
+function sizeComposer(field) {
+  field.style.height = 'auto';
+  field.style.height = `${Math.min(field.scrollHeight, 140)}px`;
+}
+
+// Events from Voice.kt (see the comment there).
+window.onVoice = function(event, text) {
+  if (!voiceOn) return;
+  if (event === 'partial') {
+    chatDraft = [voiceDraft, text].filter(Boolean).join(' ');
+    let field = document.getElementById('chat-input');
+    if (field) {
+      field.value = chatDraft;
+      sizeComposer(field);
+    }
+  } else if (event === 'result') {
+    let message = [voiceDraft, text].filter(Boolean).join(' ');
+    voiceState = '';
+    if (chatTurn) return;
+    chatDraft = '';
+    if (!chat || !hasKey(chat.ai)) newChat(myAi);
+    sendChat(message, message);
+  } else if (event === 'spoken') {
+    if (voiceState === 'speaking') startListening();
+  } else if (event === 'error' || event === 'stopped') {
+    voiceOn = false;
+    voiceState = '';
+    if (event === 'error') notify(VOICE_ERRORS[text] || 'Couldn\'t use the microphone. Try again.', text === 'denied' ? 6000 : 3500);
+    if (page === 'chat') render();
+  }
+};
+
+const MIC_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+function composerHtml(name) {
+  let placeholder = voiceState === 'listening' ? 'Listening…' : voiceState === 'speaking' ? 'Reading it out… tap the mic to cut in' : `Message ${name}`,
+    mic = hasVoice() && !chatTurn ? `<button class="outline send mic${voiceState === 'listening' ? ' listening' : ''}" aria-label="${voiceState === 'listening' ? 'Done talking' : 'Talk'}" onclick="tapMic()">${MIC_ICON}</button>` : '',
+    action = chatTurn || voiceOn ? `<button class="primary send" aria-label="Stop" onclick="stopTalking()">■</button>` : `<button class="primary send" aria-label="Send" onclick="sendFromComposer()">➤</button>`;
+  return `<div class="composer"><textarea id="chat-input" class="field" rows="1" placeholder="${escapeHtml(placeholder)}" oninput="chatDraft=this.value;sizeComposer(this)">${escapeHtml(chatDraft)}</textarea>${mic}${action}</div>`;
 }
 
 // ---- Chat screen ----
@@ -595,7 +708,7 @@ function chatPage() {
     toPan = last && last.role === 'assistant' && !chatTurn && !chatError ? `<button class="secondary chat-to-pan" onclick="sendToPan()">Send to pan →</button>` : '',
     error = chatError ? `<div class="chat-error"><div>${escapeHtml(chatError.text)}</div><button class="text-btn" onclick="retryChat()">Try again</button></div>` : '';
   return `${head}${intro}<div class="chat-log">${items.map(chatItemHtml).join('')}<div id="chat-live">${liveReplyHtml()}</div>${error}${toPan}</div>
-<div class="composer"><textarea id="chat-input" class="field" rows="1" placeholder="Message ${name}" oninput="chatDraft=this.value;this.style.height='auto';this.style.height=Math.min(this.scrollHeight,140)+'px'">${escapeHtml(chatDraft)}</textarea>${chatTurn ? `<button class="primary send" aria-label="Stop" onclick="stopChat()">■</button>` : `<button class="primary send" aria-label="Send" onclick="sendFromComposer()">➤</button>`}</div>`;
+${composerHtml(name)}`;
 }
 
 // ---- Saved state ----

@@ -48,6 +48,11 @@ function reset() {
   chatDraft = '';
   aiModels = {};
   aiModelLists = {};
+  voiceOn = false;
+  voiceState = '';
+  voiceDraft = '';
+  canTalk = null;
+  bridge.voice = false;
   render();
   bridge.calls.length = 0;
 }
@@ -1357,6 +1362,89 @@ test('the meal schema meets OpenAI strict mode: closed objects with every field 
   walk(MEAL_SCHEMA, 'meal');
   let meal = fromV1Meal(TEST_MEAL, 0);
   eq(meal.recipes[0].title, 'Lemon roast chicken', 'the app reads what the schema describes');
+});
+
+// ---- Voice (chat.js and Voice.kt) ----
+
+function talk() {
+  bridge.voice = true;
+  canTalk = null;
+  connect('claude');
+  go('chat');
+}
+
+test('without a speech recognizer there is no mic button', () => {
+  connect('claude');
+  go('chat');
+  assert(document.getElementById('chat-input'), 'message box shown');
+  assert(!main().querySelector('.mic'), 'no mic');
+});
+
+test('talking sends what was said, reads the reply aloud, then listens again', () => {
+  talk();
+  main().querySelector('.mic').click();
+  eq(bridgeCalls('voiceListen').length, 1);
+  assert(main().querySelector('.mic.listening'), 'mic shows it is listening');
+  eq(lastAwakeCall(), true, 'the screen stays on in voice mode');
+  window.onVoice('partial', 'a cozy');
+  eq(document.getElementById('chat-input').value, 'a cozy', 'what is heard shows in the box');
+  window.onVoice('result', 'a cozy dinner for two');
+  eq(aiBody().messages.pop().content, 'a cozy dinner for two');
+  streamAi(claudeReply('**Braised** chicken:\n- thighs\n- leeks', TEST_MEAL));
+  finishAi();
+  eq(bridgeCalls('voiceSpeak')[0][1], 'Braised chicken:\nthighs\nleeks\nAdded Lemon chicken supper to your meals.', 'read without the formatting, with the saved meal');
+  window.onVoice('spoken', '');
+  eq(bridgeCalls('voiceListen').length, 2, 'listens again');
+});
+
+test('what was already typed stays in front of what is said', () => {
+  talk();
+  document.getElementById('chat-input').value = 'For Sunday:';
+  chatDraft = 'For Sunday:';
+  tapMic();
+  window.onVoice('result', 'roast chicken');
+  eq(chat.items[0].text, 'For Sunday: roast chicken');
+});
+
+test('tapping the mic while listening sends what has been said so far', () => {
+  talk();
+  tapMic();
+  tapMic();
+  eq(bridgeCalls('voiceFinishListening').length, 1);
+});
+
+test('saying nothing ends voice mode with a hint', () => {
+  talk();
+  tapMic();
+  window.onVoice('error', 'silence');
+  eq([voiceOn, voiceState], [false, '']);
+  assert(document.getElementById('toast').textContent.includes('Didn'), 'hint shown');
+  assert(!main().querySelector('.mic.listening'), 'mic back to normal');
+});
+
+test('a refused microphone explains where to allow it', () => {
+  talk();
+  tapMic();
+  window.onVoice('error', 'denied');
+  assert(document.getElementById('toast').textContent.includes('Permissions'), document.getElementById('toast').textContent);
+});
+
+test('Stop ends voice mode, and so does leaving the chat', () => {
+  talk();
+  tapMic();
+  main().querySelector('.send[aria-label="Stop"]').click();
+  eq([voiceOn, bridgeCalls('voiceStop').length], [false, 1]);
+  tapMic();
+  go('home');
+  eq([voiceOn, bridgeCalls('voiceStop').length], [false, 2]);
+});
+
+test('the app stopping voice (it went to the background) resets the composer', () => {
+  talk();
+  tapMic();
+  window.onVoice('stopped', '');
+  eq(voiceOn, false);
+  assert(main().querySelector('.send[aria-label="Send"]'), 'Send is back');
 });
 
 // ---- Report ----

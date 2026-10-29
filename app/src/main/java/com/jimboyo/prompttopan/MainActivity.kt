@@ -1,5 +1,6 @@
 package com.jimboyo.prompttopan
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
@@ -10,6 +11,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -42,9 +44,14 @@ class MainActivity : Activity() {
     private var safeTopDp = 44
     private var safeBottomDp = 0
     private var imeBottomDp = 0
+    // Whether the page has used the mic or read-aloud yet, so Voice isn't created just to be stopped.
+    private var voiceUsed = false
+    // The microphone permission dialog pauses the activity; that pause mustn't end voice mode.
+    private var askingForMic = false
     private val prefs: SharedPreferences by lazy { getSharedPreferences("mealkeeper", MODE_PRIVATE) }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val aiApi by lazy { AiApi(this) { script -> mainHandler.post { runJs(script) } } }
+    private val voice by lazy { Voice(this) { script -> mainHandler.post { runJs(script) } } }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -127,6 +134,20 @@ class MainActivity : Activity() {
         setUpSystemBars()
         handleIncomingIntent(intent)
         webView.loadUrl("file:///android_asset/index.html")
+    }
+
+    // The mic and read-aloud replies are only for while the chat is on screen.
+    override fun onPause() {
+        super.onPause()
+        if (voiceUsed && !askingForMic) voice.stop(tellPage = true)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_MICROPHONE) return
+        askingForMic = false
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) voice.listen()
+        else runJs("window.onVoice&&window.onVoice('error','denied')")
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -442,6 +463,34 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun aiCancel(id: String) = aiApi.cancel(id)
 
+        // Talking with the chat; see Voice and the voice section of chat.js. The first listen asks for the microphone.
+        @JavascriptInterface
+        fun voiceAvailable(): Boolean = voice.available
+
+        @JavascriptInterface
+        fun voiceListen() {
+            runOnUiThread {
+                voiceUsed = true
+                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) voice.listen()
+                else {
+                    askingForMic = true
+                    requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_MICROPHONE)
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun voiceFinishListening() = runOnUiThread { voice.finishListening() }
+
+        @JavascriptInterface
+        fun voiceSpeak(text: String) = runOnUiThread {
+            voiceUsed = true
+            voice.speak(text)
+        }
+
+        @JavascriptInterface
+        fun voiceStop() = runOnUiThread { if (voiceUsed) voice.stop(tellPage = false) }
+
         // Opens the Clock app's new-alarm screen filled in, so the user confirms it there. Returns false if no clock
         // app takes the request. Clock apps set it for the next time the clock shows that time.
         @JavascriptInterface
@@ -496,6 +545,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
         aiApi.cancelAll()
+        if (voiceUsed) voice.release()
         if (::webView.isInitialized) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             webView.destroy()
@@ -506,6 +556,7 @@ class MainActivity : Activity() {
     companion object {
         private const val REQUEST_EXPORT_BACKUP = 41
         private const val REQUEST_RESTORE_BACKUP = 42
+        private const val REQUEST_MICROPHONE = 43
         private const val PREF_CLIPBOARD_WATCH = "clipboardWatch"
         private const val PREF_APPEARANCE = "appearance"
         private const val SHARED_FILE_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000

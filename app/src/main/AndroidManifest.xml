@@ -4,11 +4,20 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Lets the timeline hand a start-cooking alarm to the Clock app (a normal permission: no prompt). -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- Talking to the chat (Voice): asked for the first time the mic button is tapped. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Lets MainActivity find the ChatGPT, Claude and Grok apps (Android 11+ package visibility); see AI_APPS. -->
     <queries>
         <package android:name="com.openai.chatgpt" />
         <package android:name="com.anthropic.claude" />
         <package android:name="ai.x.grok" />
+        <!-- The phone's speech recognizer and text-to-speech engine, for Voice. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
     <application
         android:allowBackup="true"
