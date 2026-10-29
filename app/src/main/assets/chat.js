@@ -144,6 +144,13 @@ function hasKey(ai) {
   return hasApi() && !!aiKeys[ai];
 }
 
+function hasAnyKey() {
+  return Object.keys(AI_APIS).some(hasKey);
+}
+
+// API keys stay encrypted on this phone (AiApi.kt), so backups leave them out; saving and restoring a backup say so.
+const KEYS_NOT_BACKED_UP = 'Your AI API keys aren\'t in backups: they\'re locked to this phone. After a reinstall or on a new phone you\'ll add them again, so keep a copy of each key somewhere safe, like a password manager.';
+
 function refreshAiKeys() {
   try {
     aiKeys = hasApi() ? JSON.parse(window.MealkeeperAndroid.aiKeys()) || {} : {};

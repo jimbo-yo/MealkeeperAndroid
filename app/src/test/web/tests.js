@@ -1447,6 +1447,33 @@ test('the app stopping voice (it went to the background) resets the composer', (
   assert(main().querySelector('.send[aria-label="Send"]'), 'Send is back');
 });
 
+// ---- API keys and backups ----
+
+test('with an API key saved, exporting a backup warns that keys are not in it', () => {
+  connect('claude');
+  exportBackup();
+  assert(modal().textContent.includes('API keys aren\'t included'), modal().textContent);
+  eq(bridgeCalls('saveBackupFile').length, 0, 'nothing saved yet');
+  [...modal().querySelectorAll('button')].find(b => b.textContent === 'Save backup').click();
+  eq(bridgeCalls('saveBackupFile').length, 1);
+  assert(!JSON.parse(bridgeCalls('saveBackupFile')[0][2]).keys, 'no keys in the file');
+});
+
+test('restoring with no API key on the phone offers to add it again', () => {
+  receiveBackupFile(JSON.stringify({format: BACKUP_FORMAT, meals: [{id: 7, name: 'Backed up', recipes: []}]}));
+  assert(modal().textContent.includes('Add yours again'), 'the restore dialog mentions keys');
+  confirmRestore();
+  assert(modal().textContent.includes('Add your API key again'), modal().textContent);
+});
+
+test('restoring with a key already saved says it stays', () => {
+  connect('claude');
+  receiveBackupFile(JSON.stringify({format: BACKUP_FORMAT, meals: [{id: 7, name: 'Backed up', recipes: []}]}));
+  assert(modal().textContent.includes('already on this phone stay'), modal().textContent);
+  confirmRestore();
+  assert(!modalOpen(), 'no key reminder');
+});
+
 // ---- Report ----
 
 reset();
