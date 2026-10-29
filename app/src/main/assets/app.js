@@ -180,7 +180,10 @@ function cleanRecipe(r, j) {
     })),
     instructions: arr(r.instructions).map(str).filter(Boolean),
     makeAhead: str(r.makeAhead),
-    source: str(r.source)
+    source: str(r.source),
+    // The keeper this recipe came from or was saved as, and the version of it the user has seen (keepers.js).
+    keeper: num(r.keeper),
+    keeperSig: str(r.keeperSig)
   }
 }
 
@@ -331,6 +334,7 @@ function updateMeal(target, fresh, v1) {
   if (str(v1.description)) target.desc = fresh.desc;
   if (str(v1.total_time) || fresh.timeline.length) target.time = fresh.time;
   if (num(v1.servings)) target.servings = fresh.servings;
+  carryKeeperLinks(target.recipes, fresh.recipes);
   target.recipes = fresh.recipes;
   target.timeline = fresh.timeline;
   target.shopping = fresh.shopping.map(x => ({...x, checked: checked.has(x.name.trim().toLowerCase())}));
@@ -439,6 +443,7 @@ function saveState() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       meals,
+      keepers,
       selectedMeal,
       awake,
       cookAwake,
@@ -463,6 +468,10 @@ function applyState(s) {
     meals.length = 0;
     s.meals.map(cleanMeal).filter(Boolean).forEach(m => meals.push(m))
   }
+  if (Array.isArray(s.keepers)) {
+    keepers.length = 0;
+    s.keepers.map(cleanKeeper).filter(Boolean).forEach(k => keepers.push(k))
+  }
   let legacy = meals.find(m => m.id === 1);
   if (Array.isArray(s.checked) && legacy) s.checked.forEach(i => {
     if (Number.isInteger(i) && legacy.shopping[i]) legacy.shopping[i].checked = true
@@ -486,6 +495,7 @@ function exportBackup(confirmed) {
       format: BACKUP_FORMAT,
       exported_at: new Date().toISOString(),
       meals,
+      keepers,
       settings: {
         awake,
         cookAwake,
@@ -534,7 +544,9 @@ window.receiveBackupFile = function(text) {
   if (o && o.format === BACKUP_FORMAT && Array.isArray(o.meals)) {
     pendingRestore = o;
     let when = Date.parse(o.exported_at);
-    openModal(`<h2>Restore this backup?</h2><p class="subhead">Your current ${meals.length} meal collection(s) and shopping checklist will be replaced with the ${o.meals.length} meal collection(s) in this backup${when?' from '+escapeHtml(new Date(when).toLocaleString()):''}.</p>${hasApi() ? `<p class="muted small" style="line-height:1.5">Backups don't include AI API keys.${hasAnyKey() ? ' The keys already on this phone stay.' : ' Add yours again afterwards in Settings → AI accounts.'}</p>` : ''}<div class="modal-foot"><button class="outline" onclick="pendingRestore=null;closeModal()">Cancel</button><button class="primary" onclick="confirmRestore()">Replace my data</button></div>`)
+    // Backups from before keepers existed have none; restoring one leaves the keepers alone.
+    let kept = Array.isArray(o.keepers) ? ` and ${o.keepers.length} keeper(s)` : '';
+    openModal(`<h2>Restore this backup?</h2><p class="subhead">Your current ${meals.length} meal collection(s)${kept ? ` and ${keepers.length} keeper(s)` : ''} and shopping checklist will be replaced with the ${o.meals.length} meal collection(s)${kept} in this backup${when?' from '+escapeHtml(new Date(when).toLocaleString()):''}.</p>${hasApi() ? `<p class="muted small" style="line-height:1.5">Backups don't include AI API keys.${hasAnyKey() ? ' The keys already on this phone stay.' : ' Add yours again afterwards in Settings → AI accounts.'}</p>` : ''}<div class="modal-foot"><button class="outline" onclick="pendingRestore=null;closeModal()">Cancel</button><button class="primary" onclick="confirmRestore()">Replace my data</button></div>`)
   } else if (o && o.meals && o.meals.length) {
     offerImport(text, 'FROM A FILE')
   } else {
@@ -546,6 +558,7 @@ function confirmRestore() {
   if (!pendingRestore) return;
   applyState({
     meals: pendingRestore.meals,
+    keepers: pendingRestore.keepers,
     checked: pendingRestore.checked,
     awake: obj(pendingRestore.settings).awake,
     cookAwake: obj(pendingRestore.settings).cookAwake,
@@ -710,13 +723,14 @@ function mealCard(m) {
 }
 
 function mealsPage() {
-  return `<div class="eyebrow">YOUR COLLECTIONS</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">Meal collections</h1><p class="subhead">Keep every course, recipe, shopping item, and cooking step together.</p></div><button class="primary" onclick="newMeal()">＋ New meal</button></div>${meals.length ? `<div class="meal-grid">${meals.map(mealCard).join('')}</div>` : emptyPanel('🍲', 'No meals yet', 'Plan one with ChatGPT or Claude and send it here, or start one with New meal.')}`
+  if (mealsTab === 'keepers') return keepersPage();
+  return `<div class="eyebrow">YOUR COLLECTIONS</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">Meal collections</h1><p class="subhead">Keep every course, recipe, shopping item, and cooking step together.</p></div><button class="primary" onclick="newMeal()">＋ New meal</button></div>${mealsTabs()}${meals.length ? `<div class="meal-grid">${meals.map(mealCard).join('')}</div>` : emptyPanel('🍲', 'No meals yet', 'Plan one with ChatGPT or Claude and send it here, or start one with New meal.')}`
 }
 
 function mealPage() {
   let m = currentMeal();
   if (!m) return mealsPage();
-  return `<button class="text-btn" onclick="go('meals')">← All meal collections</button><div style="height:15px"></div><div class="eyebrow">MEAL COLLECTION</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">${escapeHtml(m.name)}</h1><p class="subhead">${escapeHtml(m.desc)}</p><div class="row muted small">◷ ${escapeHtml(m.time)} &nbsp;·&nbsp; ${m.recipes.length} recipes &nbsp;·&nbsp; Serves ${escapeHtml(m.servings)}</div></div><div class="actions"><button class="secondary" onclick="reviseMeal()">✧ Revise with AI</button><button class="outline" onclick="shareMeal()">☍ Share</button><button class="outline" onclick="openImport()">＋ Import</button></div></div><div class="tabs"><button class="tab ${mealTab==='recipes'?'active':''}" onclick="mealTab='recipes';render()">Recipes (${m.recipes.length})</button><button class="tab ${mealTab==='shopping'?'active':''}" onclick="mealTab='shopping';render()">Shopping list</button><button class="tab ${mealTab==='timeline'?'active':''}" onclick="mealTab='timeline';render()">Cooking timeline</button></div>${mealTab==='recipes'?`<div class="section-head" style="margin-top:12px"><h2>Courses & recipes</h2><button class="text-btn" onclick="go('ai')">✧ Plan with AI</button></div><div class="recipe-list">${m.recipes.length?m.recipes.map((r,i)=>`<div class="recipe-row" onclick="showRecipe(${i})"><div class="recipe-icon">${escapeHtml(r.icon)}</div><div><h3>${escapeHtml(r.title)}</h3><p>${escapeHtml([r.course,r.time].filter(Boolean).join(' · '))}</p></div><span class="arrow">›</span></div>`).join(''):`<div class="panel empty"><div style="font-size:34px;margin-bottom:12px">🥘</div><strong>No recipes yet</strong><p class="small">Import a recipe bundle from your AI, and all the courses will appear here.</p><button class="primary" onclick="openImport()">Import recipes</button></div>`}</div>`:mealTab==='shopping'?shoppingPage(true):timelinePage(true)}<div class="actions" style="margin-top:20px"><button class="secondary" onclick="go('shopping')">☷ Open full shopping list</button><button class="secondary" onclick="go('timeline')">◷ Plan cooking order</button></div><div class="divider" style="margin-top:28px"></div><button class="outline danger" onclick="confirmDeleteMeal()">Delete meal</button>`
+  return `<button class="text-btn" onclick="go('meals')">← All meal collections</button><div style="height:15px"></div><div class="eyebrow">MEAL COLLECTION</div><div class="spread" style="align-items:flex-start"><div><h1 class="headline">${escapeHtml(m.name)}</h1><p class="subhead">${escapeHtml(m.desc)}</p><div class="row muted small">◷ ${escapeHtml(m.time)} &nbsp;·&nbsp; ${m.recipes.length} recipes &nbsp;·&nbsp; Serves ${escapeHtml(m.servings)}</div></div><div class="actions"><button class="secondary" onclick="reviseMeal()">✧ Revise with AI</button><button class="outline" onclick="shareMeal()">☍ Share</button><button class="outline" onclick="openImport()">＋ Import</button></div></div><div class="tabs"><button class="tab ${mealTab==='recipes'?'active':''}" onclick="mealTab='recipes';render()">Recipes (${m.recipes.length})</button><button class="tab ${mealTab==='shopping'?'active':''}" onclick="mealTab='shopping';render()">Shopping list</button><button class="tab ${mealTab==='timeline'?'active':''}" onclick="mealTab='timeline';render()">Cooking timeline</button></div>${mealTab==='recipes'?`<div class="section-head" style="margin-top:12px"><h2>Courses & recipes</h2><button class="text-btn" onclick="go('ai')">✧ Plan with AI</button></div><div class="recipe-list">${m.recipes.length?m.recipes.map((r,i)=>`<div class="recipe-row" onclick="showRecipe(${i})"><div class="recipe-icon">${escapeHtml(r.icon)}</div><div><h3>${escapeHtml(r.title)}${keeperById(r.keeper)?' <span class="keeper-star" title="Keeper">★</span>':''}</h3><p>${escapeHtml([r.course,r.time].filter(Boolean).join(' · '))}</p></div><span class="arrow">›</span></div>`).join(''):`<div class="panel empty"><div style="font-size:34px;margin-bottom:12px">🥘</div><strong>No recipes yet</strong><p class="small">Import a recipe bundle from your AI, and all the courses will appear here.</p><button class="primary" onclick="openImport()">Import recipes</button></div>`}</div>`:mealTab==='shopping'?shoppingPage(true):timelinePage(true)}<div class="actions" style="margin-top:20px"><button class="secondary" onclick="go('shopping')">☷ Open full shopping list</button><button class="secondary" onclick="go('timeline')">◷ Plan cooking order</button></div><div class="divider" style="margin-top:28px"></div><button class="outline danger" onclick="confirmDeleteMeal()">Delete meal</button>`
 }
 
 function showRecipe(i) {
@@ -725,13 +739,25 @@ function showRecipe(i) {
   if (!r) return;
   recipeOpen = true;
   syncAwake();
+  openModal(`<div class="eyebrow">${escapeHtml(m.name)}</div><h2>${escapeHtml(r.icon)} ${escapeHtml(r.title)}</h2>${keeperBar(r, i)}${recipeBody(r)}<button class="text-btn danger" style="margin-top:6px" onclick="confirmDeleteRecipe(${i})">Delete this recipe</button><div class="modal-foot"><button class="secondary" onclick="askAbout('recipe',${i})">✧ Ask AI</button><button class="secondary" onclick="openFromRecipe(${i},'shopping')">Shopping list</button><button class="primary" onclick="closeModal()">Done</button></div>`)
+}
+
+// A recipe's details, shared by the recipe screen and the keeper screen (keepers.js).
+function recipeBody(r) {
   let facts = [
     ['Prep', fmtMinutes(r.prep)],
     ['Cook', fmtMinutes(r.cook)],
     ['Total', r.time],
     ['Serves', str(r.servings || '')]
   ].filter(f => f[1]);
-  openModal(`<div class="eyebrow">${escapeHtml(m.name)}</div><h2>${escapeHtml(r.icon)} ${escapeHtml(r.title)}</h2>${r.course?`<p class="subhead" style="margin-bottom:10px">${escapeHtml(r.course)}</p>`:''}${facts.length?`<div class="muted small" style="margin-bottom:14px">${facts.map(f=>`${f[0]}: <strong>${escapeHtml(f[1])}</strong>`).join(' &nbsp;·&nbsp; ')}</div>`:''}${r.ingredients.length?`<div class="panel"><strong>Ingredients</strong>${r.ingredients.map(x=>`<div class="checkrow"><span>${escapeHtml(x.name)}${x.notes?` <span class="muted small">(${escapeHtml(x.notes)})</span>`:''}</span><span class="qty">${escapeHtml(fmtQty(x.quantity,x.unit))}</span></div>`).join('')}</div>`:''}${r.instructions.length?`<div class="panel"><strong>Instructions</strong><ol style="padding-left:20px;margin:10px 0 0;line-height:1.6;font-size:14px">${r.instructions.map(s=>`<li style="margin-bottom:8px">${escapeHtml(s)}</li>`).join('')}</ol></div>`:''}${r.ingredients.length||r.instructions.length?'':`<div class="panel"><p class="muted small" style="line-height:1.6;margin:0">No ingredients or steps are saved for this recipe. Send the meal from ChatGPT or Claude to get the full recipe.</p></div>`}${r.makeAhead?`<div class="panel"><strong>Make ahead</strong><p class="muted small" style="line-height:1.6;margin-bottom:0">${escapeHtml(r.makeAhead)}</p></div>`:''}${r.source?`<p class="muted small">Source: ${escapeHtml(r.source)}</p>`:''}<button class="text-btn danger" style="margin-top:6px" onclick="confirmDeleteRecipe(${i})">Delete this recipe</button><div class="modal-foot"><button class="secondary" onclick="askAbout('recipe',${i})">✧ Ask AI</button><button class="secondary" onclick="openFromRecipe(${i},'shopping')">Shopping list</button><button class="primary" onclick="closeModal()">Done</button></div>`)
+  return `${r.course?`<p class="subhead" style="margin-bottom:10px">${escapeHtml(r.course)}</p>`:''}${facts.length?`<div class="muted small" style="margin-bottom:14px">${facts.map(f=>`${f[0]}: <strong>${escapeHtml(f[1])}</strong>`).join(' &nbsp;·&nbsp; ')}</div>`:''}${r.ingredients.length?`<div class="panel"><strong>Ingredients</strong>${r.ingredients.map(x=>`<div class="checkrow"><span>${escapeHtml(x.name)}${x.notes?` <span class="muted small">(${escapeHtml(x.notes)})</span>`:''}</span><span class="qty">${escapeHtml(fmtQty(x.quantity,x.unit))}</span></div>`).join('')}</div>`:''}${r.instructions.length?`<div class="panel"><strong>Instructions</strong><ol style="padding-left:20px;margin:10px 0 0;line-height:1.6;font-size:14px">${r.instructions.map(s=>`<li style="margin-bottom:8px">${escapeHtml(s)}</li>`).join('')}</ol></div>`:''}${r.ingredients.length||r.instructions.length?'':`<div class="panel"><p class="muted small" style="line-height:1.6;margin:0">No ingredients or steps are saved for this recipe. Send the meal from ChatGPT or Claude to get the full recipe.</p></div>`}${r.makeAhead?`<div class="panel"><strong>Make ahead</strong><p class="muted small" style="line-height:1.6;margin-bottom:0">${escapeHtml(r.makeAhead)}</p></div>`:''}${r.source?`<p class="muted small">Source: ${escapeHtml(r.source)}</p>`:''}`
+}
+
+// On the recipe screen: ☆ Keep, or that it's a keeper, or an offer to update the keeper after the recipe changed.
+function keeperBar(r, i) {
+  if (keeperChanged(r)) return `<div class="panel keeper-note"><strong>★ Changed since you kept it</strong><p class="muted small" style="margin:4px 0 10px;line-height:1.5">Your keeper still has the version you saved.</p><div class="actions"><button class="outline" onclick="resolveKeeperChange(${i},false)">Keep as saved</button><button class="secondary" onclick="resolveKeeperChange(${i},true)">Update keeper</button></div></div>`;
+  if (keeperById(r.keeper)) return `<p class="keeper-tag">★ In your keepers</p>`;
+  return `<button class="outline keep-btn" onclick="keepRecipe(${i})">☆ Keep this recipe</button>`;
 }
 
 function showRecipeTitled(title) {
@@ -902,8 +928,11 @@ function importMeals(parsed, mode = 'update') {
   } else {
     if (all.length) selectedMeal = all[all.length - 1].id;
     notify([updated.length && `Updated ${updated.length}`, added.length && `imported ${added.length}`].filter(Boolean).join(', ') + ' meal collection(s).');
+    mealsTab = 'meals';
     go('meals');
   }
+  let changed = updated.find(m => keeperChanges(m).length);
+  if (changed) offerKeeperUpdates(changed.id);
 }
 
 // Asks before importing a meal that arrived from outside (copied or shared). Returns false if the text isn't one.
@@ -1004,12 +1033,15 @@ function mealText(m) {
 function confirmDeleteMeal() {
   let m = currentMeal();
   if (!m) return;
-  openModal(`<h2>Delete “${escapeHtml(m.name)}”?</h2><p class="subhead">The meal goes with its ${m.recipes.length} recipe(s), shopping list and timeline. This can't be undone, but restoring a backup (Settings) brings it back.</p><div class="modal-foot"><button class="outline" onclick="closeModal()">Cancel</button><button class="primary danger-fill" onclick="deleteMeal(${m.id})">Delete meal</button></div>`, true);
+  let unkept = unkeptRecipes(m),
+    keep = unkept.length ? `<div class="panel"><strong>Keep any of these recipes first?</strong><p class="muted small" style="margin:4px 0 6px">Ticked recipes are saved to your keepers.</p>${unkept.map(r => `<label class="checkrow"><input type="checkbox" class="keep-pick" value="${escapeHtml(r.id)}"><span>${escapeHtml(r.title)}</span></label>`).join('')}</div>` : '';
+  openModal(`<h2>Delete “${escapeHtml(m.name)}”?</h2><p class="subhead">The meal goes with its ${m.recipes.length} recipe(s), shopping list and timeline. This can't be undone, but restoring a backup (Settings) brings it back.</p>${keep}<div class="modal-foot"><button class="outline" onclick="closeModal()">Cancel</button><button class="primary danger-fill" onclick="deleteMeal(${m.id})">Delete meal</button></div>`, true);
 }
 
 function deleteMeal(id) {
   let i = meals.findIndex(m => m.id === id);
   if (i < 0) return;
+  let kept = keepPickedRecipes(meals[i]);
   let [gone] = meals.splice(i, 1);
   // Drop history that would lead back to it (meal pages show the selected meal, which is about to change).
   navStack = navStack.filter(e => e !== 'meal' && !(typeof e === 'object' && e.meal === id));
@@ -1017,7 +1049,7 @@ function deleteMeal(id) {
   closeModal();
   page = 'meals';
   render();
-  notify(`Deleted “${gone.name}”`);
+  notify(kept ? `Deleted “${gone.name}”, kept ${kept} recipe(s)` : `Deleted “${gone.name}”`);
 }
 
 // What deleting recipe i takes with it: its timeline steps, and shopping items that no other recipe uses.

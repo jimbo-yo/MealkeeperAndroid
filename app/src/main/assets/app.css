@@ -891,6 +891,34 @@ textarea.field {
   }
 }
 
+/* ---- Keepers (keepers.js) ---- */
+
+/* Search hides rows and groups in place; .recipe-row's display would otherwise override [hidden]. */
+.keeper-row[hidden],
+.keeper-group[hidden] {
+  display: none;
+}
+
+.keep-btn {
+  margin: 0 0 14px;
+}
+
+.keeper-tag {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: light-dark(#a0701f, #e7c27a);
+}
+
+.keeper-star {
+  color: light-dark(#a0701f, #e7c27a);
+  font-size: 13px;
+}
+
+.keeper-note {
+  border-color: light-dark(#e2c896, #6b5a35);
+}
+
 /* ---- Chat (chat.js) ---- */
 
 .chat-log {

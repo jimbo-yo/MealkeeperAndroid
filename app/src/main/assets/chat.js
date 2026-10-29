@@ -682,7 +682,9 @@ function chatItemHtml(item, i) {
   if (item.role === 'user') return `<div class="bubble user">${item.about ? `<div class="bubble-about">✧ ${escapeHtml(item.about)}</div>` : ''}${escapeHtml(item.text)}</div>`;
   if (item.role === 'assistant') return `<div class="bubble ai">${chatHtml(item.text)}</div><button class="text-btn chat-report" onclick="reportReply(${i})">Report</button>`;
   let m = meals.find(x => x.id === item.id);
-  return `<div class="panel meal-saved"><div class="row"><div class="recipe-icon">✓</div><div style="flex:1;min-width:0"><strong>${item.updated ? 'Updated' : 'Added to your meals'}</strong><div class="muted small" style="margin-top:4px">${escapeHtml(m ? m.name : item.name)}${m ? ` · ${m.recipes.length} recipes` : ' (since deleted)'}</div></div>${m ? `<button class="secondary" onclick="openMeal(${m.id})">Open</button>` : ''}</div></div>`;
+  let changed = keeperChanges(m).length,
+    keeperNote = changed ? `<div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><span class="muted small">★ ${changed === 1 ? 'A keeper' : `${changed} keepers`} changed in this version</span><button class="outline" onclick="offerKeeperUpdates(${m.id})">Review</button></div>` : '';
+  return `<div class="panel meal-saved"><div class="row"><div class="recipe-icon">✓</div><div style="flex:1;min-width:0"><strong>${item.updated ? 'Updated' : 'Added to your meals'}</strong><div class="muted small" style="margin-top:4px">${escapeHtml(m ? m.name : item.name)}${m ? ` · ${m.recipes.length} recipes` : ' (since deleted)'}</div></div>${m ? `<button class="secondary" onclick="openMeal(${m.id})">Open</button>` : ''}</div>${keeperNote}</div>`;
 }
 
 function liveReplyHtml() {

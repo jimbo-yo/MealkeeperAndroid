@@ -1,10 +1,11 @@
-const CACHE = 'prompt-to-pan-web-v1';
+const CACHE = 'prompt-to-pan-web-v2';
 const FILES = [
   './',
   './index.html',
   './app.css',
   './app.js',
   './chat.js',
+  './keepers.js',
   './demo-data.js',
   './manifest.webmanifest',
   './fonts/SpaceMono-Bold.woff2',

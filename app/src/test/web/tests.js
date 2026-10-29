@@ -53,6 +53,9 @@ function reset() {
   voiceDraft = '';
   canTalk = null;
   bridge.voice = false;
+  keepers.length = 0;
+  mealsTab = 'meals';
+  keeperQuery = '';
   render();
   bridge.calls.length = 0;
 }
@@ -1472,6 +1475,212 @@ test('restoring with a key already saved says it stays', () => {
   assert(modal().textContent.includes('already on this phone stay'), modal().textContent);
   confirmRestore();
   assert(!modalOpen(), 'no key reminder');
+});
+
+// ---- Keepers (keepers.js) ----
+
+const recipeIndex = title => currentMeal().recipes.findIndex(r => r.title === title);
+const keeperNamed = title => keepers.find(k => k.recipe.title === title);
+
+function keep(title) {
+  openMeal(1);
+  showRecipe(recipeIndex(title));
+  [...modal().querySelectorAll('button')].find(b => b.textContent.includes('Keep this recipe')).click();
+  return keeperNamed(title);
+}
+
+test('keeping a recipe saves a copy with its own shopping items and steps', () => {
+  let k = keep('Sausage & pepper rigatoni');
+  eq(keepers.length, 1);
+  assert(modal().textContent.includes('In your keepers'), 'the recipe shows it is kept');
+  eq(k.shopping.map(x => [x.name, x.qty, x.group]), [
+    ['Italian sausage links', '1 lb', 'Meat & seafood'], ['Rigatoni pasta', '12 oz', 'Pantry'], ['Bell peppers', '2', 'Produce'],
+    ['Parmesan', '½ cup', 'Dairy'], ['Heavy cream', '½ cup', 'Dairy'],
+    ['Garlic', '3 cloves', 'Produce'], ['Olive oil', '1 tbsp', 'Pantry']], 'shared items come from its own ingredients');
+  eq(k.steps.map(t => [t.offset, t.task]), [[0, 'Start the sausage & pepper sauce'], [20, 'Boil pasta'], [30, 'Finish and plate the main']]);
+  closeModal();
+  assert(main().querySelector('.keeper-star'), 'a star on the recipe row');
+});
+
+test('a keeper is a copy: deleting its meal leaves it', () => {
+  let k = keep('Lemon ricotta cups');
+  deleteMeal(1);
+  eq(keepers, [k]);
+  eq(k.recipe.ingredients.length, 3);
+});
+
+test('keeping a recipe with the same name as a keeper links to it instead', () => {
+  keep('Lemon ricotta cups');
+  let copy = cleanMeal({...JSON.parse(JSON.stringify(meals[0])), id: 99, name: 'Copy'}, 0);
+  copy.recipes.forEach(r => r.keeper = null);
+  meals.unshift(copy);
+  openMeal(99);
+  keepRecipe(recipeIndex('Lemon ricotta cups'));
+  eq([keepers.length, currentMeal().recipes[recipeIndex('Lemon ricotta cups')].keeper], [1, keepers[0].id]);
+});
+
+test('the Keepers tab groups by course and searches by ingredient', () => {
+  keep('Sausage & pepper rigatoni');
+  keep('Lemon ricotta cups');
+  closeModal();
+  go('meals');
+  mealsTab = 'keepers';
+  render();
+  eq([...main().querySelectorAll('.keeper-group h2')].map(h => h.textContent), ['Dessert', 'Main']);
+  let box = document.getElementById('keeper-search');
+  box.value = 'ricotta';
+  box.dispatchEvent(new Event('input'));
+  eq([...main().querySelectorAll('.keeper-row')].filter(r => !r.hidden).map(r => r.querySelector('h3').textContent), ['Lemon ricotta cups']);
+  box.value = 'sausage';
+  box.dispatchEvent(new Event('input'));
+  eq([...main().querySelectorAll('.keeper-row')].filter(r => !r.hidden).map(r => r.querySelector('h3').textContent), ['Sausage & pepper rigatoni'], 'ingredients count');
+  box.value = 'zucchini';
+  box.dispatchEvent(new Event('input'));
+  assert(!document.getElementById('keeper-none').hidden, 'says nothing matches');
+});
+
+test('adding a keeper to a new meal brings its recipe, shopping list and timeline', () => {
+  let k = keep('Sausage & pepper rigatoni');
+  closeModal();
+  addKeeperToMeal(k.id, null);
+  let m = currentMeal();
+  eq([page, m.name, m.recipes.map(r => r.title), m.shopping.length, m.timeline.length, m.time], ['meal', 'Sausage & pepper rigatoni', ['Sausage & pepper rigatoni'], 7, 3, '40 min']);
+  eq(m.recipes[0].keeper, k.id);
+  assert(k.lastMade, 'records when it was last made');
+  assert(!keeperChanged(m.recipes[0]), 'nothing to update');
+});
+
+test('a keeper joins a meal timed to finish with it, and merges shopping items with the same name', () => {
+  let main_ = keep('Sausage & pepper rigatoni'), dessert = keep('Lemon ricotta cups'), starter = keep('Roasted tomato bruschetta');
+  closeModal();
+  addKeeperToMeal(dessert.id, null);
+  let m = currentMeal();
+  addKeeperToMeal(main_.id, m.id);
+  eq(m.timeline.map(t => [t.offset, t.recipeId]), [[0, 'rigatoni'], [20, 'rigatoni'], [30, 'rigatoni'], [35, 'ricotta']], 'the shorter dessert moves later');
+  eq(m.time, '40 min');
+  addKeeperToMeal(starter.id, m.id);
+  eq(Math.max(...m.timeline.map(t => t.offset + t.duration)), 40, 'still finishes together');
+  let garlic = m.shopping.find(x => x.name === 'Garlic');
+  eq([garlic.qty, garlic.usedIn], ['3 cloves + 1 clove', ['Sausage & pepper rigatoni', 'Roasted tomato bruschetta']]);
+});
+
+test('a keeper already in a meal is not added twice', () => {
+  let k = keep('Lemon ricotta cups');
+  closeModal();
+  addKeeperToMeal(k.id, 1);
+  eq(meals[0].recipes.length, 3);
+  assert(document.getElementById('toast').textContent.includes('already in'), 'says so');
+});
+
+test('when a revision changes a kept recipe, the app offers to update the keeper', () => {
+  let k = keep('Sausage & pepper rigatoni');
+  closeModal();
+  receiveClipboardText(revisedSupper());
+  confirmImport('update');
+  assert(modal().textContent.includes('Update your keeper “Mushroom & pepper rigatoni”?'), modal().textContent);
+  [...modal().querySelectorAll('button')].find(b => b.textContent === 'Update keeper').click();
+  eq([k.recipe.title, k.recipe.ingredients[0].name], ['Mushroom & pepper rigatoni', 'Cremini mushrooms']);
+  eq(k.shopping[0].name, 'Cremini mushrooms');
+  assert(!keeperChanges(meals[0]).length, 'nothing left to offer');
+});
+
+test('"Keep as saved" leaves the keeper alone and stops offering, until the recipe changes again', () => {
+  let k = keep('Sausage & pepper rigatoni');
+  closeModal();
+  receiveClipboardText(revisedSupper());
+  confirmImport('update');
+  [...modal().querySelectorAll('button')].find(b => b.textContent === 'Keep as saved').click();
+  eq(k.recipe.title, 'Sausage & pepper rigatoni');
+  showRecipe(1);
+  assert(modal().textContent.includes('In your keepers') && !modal().textContent.includes('Changed since'), 'no offer on the recipe');
+  closeModal();
+  receiveClipboardText(revisedSupper({servings: 6}).replace('Cremini mushrooms', 'Shiitake mushrooms'));
+  confirmImport('update');
+  assert(modal().textContent.includes('Update your keeper'), 'offered again after another change');
+});
+
+test('the recipe screen offers the update too', () => {
+  let k = keep('Lemon ricotta cups');
+  let r = meals[0].recipes[2];
+  r.instructions = ['Whip with lemon.'];
+  showRecipe(2);
+  assert(modal().textContent.includes('Changed since you kept it'), modal().textContent);
+  resolveKeeperChange(2, true);
+  eq(k.recipe.instructions, ['Whip with lemon.']);
+});
+
+test('a chat revision that changes a keeper offers a review on its card', () => {
+  keep('Sausage & pepper rigatoni');
+  closeModal();
+  connect('claude');
+  newChat('claude');
+  let v1 = toV1Meal(meals[0]);
+  v1.recipes[1].instructions = ['Something new.'];
+  saveMealFromAi(v1);
+  go('chat');
+  let review = [...main().querySelectorAll('.meal-saved button')].find(b => b.textContent === 'Review');
+  assert(review, main().textContent);
+  review.click();
+  assert(modal().textContent.includes('Update your keeper'), modal().textContent);
+});
+
+test('deleting a meal offers to keep its recipes first', () => {
+  keep('Lemon ricotta cups');
+  closeModal();
+  confirmDeleteMeal();
+  let picks = [...modal().querySelectorAll('.keep-pick')];
+  eq(picks.map(p => p.parentNode.textContent), ['Roasted tomato bruschetta', 'Sausage & pepper rigatoni'], 'only recipes not kept yet');
+  picks[1].checked = true;
+  deleteMeal(1);
+  eq(keepers.map(k => k.recipe.title).sort(), ['Lemon ricotta cups', 'Sausage & pepper rigatoni']);
+  eq(keeperNamed('Sausage & pepper rigatoni').steps.length, 3, 'kept with its steps');
+});
+
+test('deleting a keeper unlinks the recipes that came from it', () => {
+  let k = keep('Lemon ricotta cups');
+  deleteKeeper(k.id);
+  eq([keepers.length, meals[0].recipes[2].keeper], [0, null]);
+});
+
+test('keepers are saved, backed up and restored', () => {
+  keep('Lemon ricotta cups');
+  closeModal();
+  let saved = JSON.parse(localStorage.getItem(STORE_KEY));
+  eq(saved.keepers.map(k => k.recipe.title), ['Lemon ricotta cups']);
+  keepers.length = 0;
+  loadState();
+  eq(keepers.map(k => k.recipe.title), ['Lemon ricotta cups'], 'come back after a restart');
+  exportBackup();
+  let backup = JSON.parse(bridgeCalls('saveBackupFile')[0][2]);
+  eq(backup.keepers.length, 1);
+  keepers.length = 0;
+  receiveBackupFile(JSON.stringify(backup));
+  assert(modal().textContent.includes('1 keeper(s)'), modal().textContent);
+  confirmRestore();
+  eq(keepers.length, 1);
+});
+
+test('restoring a backup from before keepers leaves the keepers alone', () => {
+  keep('Lemon ricotta cups');
+  closeModal();
+  receiveBackupFile(JSON.stringify({format: BACKUP_FORMAT, meals: [{id: 7, name: 'Old backup', recipes: []}]}));
+  assert(!modal().textContent.includes('keeper'), modal().textContent);
+  confirmRestore();
+  eq(keepers.length, 1);
+});
+
+test('saved keepers are cleaned and shown as text, never markup', () => {
+  applyState({keepers: [{id: 5, recipe: {title: '<b>t</b>', course: '<i>c</i>', ingredients: [{name: '<img src=y>'}], instructions: ['<script>x()</script>']},
+    shopping: [{name: '<b>s</b>'}], steps: [{task: '<b>k</b>'}]}, {recipe: {}}, 'junk']});
+  eq(keepers.length, 1, 'keepers without a recipe title are dropped');
+  go('meals');
+  mealsTab = 'keepers';
+  render();
+  assert(!hasMarkup(main()) && main().textContent.includes('<b>t</b>'), main().innerHTML);
+  showKeeper(5);
+  assert(!hasMarkup(modal()), modal().innerHTML);
+  addKeeperToMeal(5, null);
+  assert(!hasMarkup(main()), 'the meal it joins');
 });
 
 // ---- Report ----
