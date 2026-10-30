@@ -28,11 +28,13 @@ COOK FROM YOUR PHONE
 
 KEEP TALKING TO YOUR AI
 • Chat with Claude, ChatGPT or Grok inside the app using your own API key, and pick the model
+• Talk instead of typing: voice mode listens, sends, and reads the reply aloud while your hands are busy
 • Revise with AI: ask for a change ("swap the russets for Yukon Golds") and the updated meal replaces the old one, keeping your check marks
 • Ask AI: ask about a recipe or timeline step while you cook
 • Or use the ChatGPT, Claude or Grok app: a one-time setup gives it the instructions it needs
 
 SHARE AND KEEP YOUR MEALS
+• Keepers: star a favourite recipe to save it, then add it to any meal with its shopping list and timeline steps
 • Share a meal with someone who has the app, or as readable text with anyone
 • Back up and restore your meals as a file
 • Delete meals and recipes you're done with
@@ -70,6 +72,18 @@ API use is billed by the AI provider to your own account (an app subscription su
 - Not collected: meals, the shopping list and settings stay on the device; the clipboard is read only on the device to spot a meal export and is never transmitted. API keys are stored on the device and sent only to their own provider.
 
 **Government app / financial features / health:** No.
+
+## Release notes for 1.1
+
+Paste into the release's notes box as-is (500 characters max; the tags set the language):
+
+<en-US>
+New in Prompt to Pan 1.1:
+• Keepers: star a favourite recipe to save it, then add it to any meal, shopping list and timeline included
+• Voice mode: tap the mic to talk to the chat, and hear the reply read aloud while you cook
+• Better meal sharing
+• Backups now remind you that API keys aren't included, so keep a copy of yours
+</en-US>
 
 ## Release notes for the first version
 

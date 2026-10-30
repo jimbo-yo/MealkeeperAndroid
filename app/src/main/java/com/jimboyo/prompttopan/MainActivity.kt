@@ -523,7 +523,8 @@ class MainActivity : Activity() {
     }
 
     // Android 13+ (and every version once the app targets 36) delivers back through onBackInvokedDispatcher instead
-    // of onBackPressed; see the callback registered in onCreate.
+    // of onBackPressed; see the callback registered in onCreate. Lint can't see that, hence the suppression.
+    @SuppressLint("GestureBackNavigation")
     @Deprecated("Only called before Android 13")
     override fun onBackPressed() = goBack()
 

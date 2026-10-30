@@ -18,9 +18,9 @@ android {
         applicationId = "com.jimboyo.prompttopan"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
+        versionCode = 3
         // Raise versionCode for every upload to Play; versionName is what the store shows.
-        versionName = "1.01"
+        versionName = "1.1"
     }
 
     signingConfigs {
