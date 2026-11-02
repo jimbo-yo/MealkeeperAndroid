@@ -22,7 +22,8 @@ let navStack = [],
   clipOffer = true,
   lastClipOffer = null,
   pendingImport = null,
-  pendingAsk = null;
+  pendingAsk = null,
+  deferredClip = null;
 
 const STORE_KEY = 'mealkeeper.state.v1',
   BACKUP_FORMAT = 'mealkeeper-backup-v1';
@@ -286,7 +287,6 @@ function buildShoppingList(recipes) {
   })
 }
 
-// AI replies often wrap JSON in ``` fences or add a sentence around it; pull out the outermost {...} block.
 // The inverse of fromV1Meal, used to hand a meal back to an AI to revise. mealkeeper_id lets the reply update it.
 function toV1Meal(m) {
   let idOf = title => (m.recipes.find(r => r.title === title) || {}).id || title;
@@ -340,6 +340,7 @@ function updateMeal(target, fresh, v1) {
   target.shopping = fresh.shopping.map(x => ({...x, checked: checked.has(x.name.trim().toLowerCase())}));
 }
 
+// AI replies often wrap JSON in ``` fences or add a sentence around it; pull out the outermost {...} block.
 function parseMealkeeperJson(text) {
   let t = text.replace(/```(?:json)?/gi, '').trim(),
     a = t.indexOf('{'),
@@ -439,20 +440,36 @@ const AI_GUIDES = {
 
 // ---- Saved state and backups ----
 
+let storageWarned = false;
+
+// When storage is full, the chat (its history holds every meal the AI saved) is dropped from the save so the meals
+// and keepers still are saved; the user is told once per session.
 function saveState() {
+  let state = {
+    meals,
+    keepers,
+    selectedMeal,
+    awake,
+    cookAwake,
+    clipOffer,
+    ai: myAi,
+    appearance,
+    ...chatState()
+  };
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({
-      meals,
-      keepers,
-      selectedMeal,
-      awake,
-      cookAwake,
-      clipOffer,
-      ai: myAi,
-      appearance,
-      ...chatState()
-    }))
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    storageWarned = false;
+    return;
   } catch (e) {}
+  let message;
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({...state, chat: null}));
+    message = 'Storage is full, so this chat won\'t be kept when the app closes. Your meals are saved. Close the chat to free space.';
+  } catch (e) {
+    message = 'Couldn\'t save your changes: storage is full. Export a backup in Settings, then delete meals you don\'t need.';
+  }
+  if (!storageWarned) notify(message, 8000);
+  storageWarned = true;
 }
 
 function loadState() {
@@ -547,9 +564,7 @@ window.receiveBackupFile = function(text) {
     // Backups from before keepers existed have none; restoring one leaves the keepers alone.
     let kept = Array.isArray(o.keepers) ? ` and ${o.keepers.length} keeper(s)` : '';
     openModal(`<h2>Restore this backup?</h2><p class="subhead">Your current ${meals.length} meal collection(s)${kept ? ` and ${keepers.length} keeper(s)` : ''} and shopping checklist will be replaced with the ${o.meals.length} meal collection(s)${kept} in this backup${when?' from '+escapeHtml(new Date(when).toLocaleString()):''}.</p>${hasApi() ? `<p class="muted small" style="line-height:1.5">Backups don't include AI API keys.${hasAnyKey() ? ' The keys already on this phone stay.' : ' Add yours again afterwards in Settings → AI accounts.'}</p>` : ''}<div class="modal-foot"><button class="outline" onclick="pendingRestore=null;closeModal()">Cancel</button><button class="primary" onclick="confirmRestore()">Replace my data</button></div>`)
-  } else if (o && o.meals && o.meals.length) {
-    offerImport(text, 'FROM A FILE')
-  } else {
+  } else if (!offerImport(text, 'FROM A FILE')) {
     notify('That file isn\'t a Prompt to Pan backup or recipe export.')
   }
 };
@@ -634,6 +649,8 @@ function render() {
   document.querySelectorAll('[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === page));
   let main = document.getElementById('main');
   main.innerHTML = (PAGES[page] || home)();
+  // The Keepers search box keeps its text across screens; apply it to the fresh list.
+  if (document.getElementById('keeper-search')) filterKeepers();
   if (page === 'meal') {
     let actions = main.querySelector('.spread .actions');
     if (actions) {
@@ -706,7 +723,16 @@ document.getElementById('modal').addEventListener('focusin', e => setTimeout(() 
 function closeModal() {
   document.getElementById('modal-bg').style.display = 'none';
   recipeOpen = false;
-  syncAwake()
+  syncAwake();
+  // A copied meal that arrived while a dialog was open is offered now (MainActivity sends each copy only once). After
+  // a tick, so a caller that closes one dialog to open another goes first; the offer then waits for that one too.
+  if (deferredClip) setTimeout(offerDeferredClip, 0);
+}
+
+function offerDeferredClip() {
+  let text = deferredClip;
+  deferredClip = null;
+  if (text) window.receiveClipboardText(text);
 }
 
 // ---- Screens ----
@@ -897,7 +923,7 @@ function doImport() {
   }
   importText = v;
   let parsed = parseMealkeeperJson(v);
-  if (parsed && parsed.meals && parsed.meals.length) {
+  if (parsed && arr(parsed.meals).length) {
     if (!parsed.meals.some(existingMealFor)) importMeals(parsed);
     else offerImport(v, 'PASTED');
   } else {
@@ -973,7 +999,8 @@ window.receiveSharedText = function(text) {
 
 // MainActivity calls this when the app comes back to the front with a new copy that looks like a meal export.
 window.receiveClipboardText = function(text) {
-  if (!clipOffer || document.getElementById('modal-bg').style.display === 'flex') return;
+  if (!clipOffer) return;
+  if (document.getElementById('modal-bg').style.display === 'flex') return void(deferredClip = text);
   if (offerImport(text, 'FROM YOUR CLIPBOARD')) return;
   // Copied while the AI was still writing: the start of an export, but not complete JSON yet.
   if (looksLikeUnfinishedExport(text)) notify('That copy looks unfinished. Wait until the AI shows “✅ Ready to copy”, then copy it again.', 6000);

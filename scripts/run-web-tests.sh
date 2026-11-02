@@ -7,8 +7,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 KEEP="${1:-}"
-WORK="$(mktemp -d)"
-PROFILE="$(mktemp -d)"
+# Under the project rather than /tmp: Firefox installed as a snap can't see /tmp.
+mkdir -p "$ROOT/build"
+WORK="$(mktemp -d "$ROOT/build/web-test.XXXXXX")"
+PROFILE="$(mktemp -d "$ROOT/build/web-test-profile.XXXXXX")"
 cleanup() {
   rm -rf "$PROFILE"
   if [ "$KEEP" != "--keep" ]; then rm -rf "$WORK"; fi

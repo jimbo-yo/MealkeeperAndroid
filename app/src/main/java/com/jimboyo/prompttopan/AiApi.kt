@@ -31,12 +31,16 @@ class AiApi(context: Context, private val runJs: (String) -> Unit) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val executor = Executors.newCachedThreadPool()
     private val open = ConcurrentHashMap<String, HttpURLConnection>()
+    // Requests cancelled before their connection opened (still waiting for a thread), so they never start.
+    private val cancelled = ConcurrentHashMap.newKeySet<String>()
 
     fun status(): String = JSONObject().apply { PROVIDERS.keys.forEach { put(it, prefs.contains(it)) } }.toString()
 
     fun setKey(ai: String, key: String): Boolean {
         val k = key.trim()
-        if (ai !in PROVIDERS || k.isEmpty() || k.length > 500) return false
+        // Keys go in an HTTP header, which rejects anything but printable ASCII (a stray newline or zero-width space
+        // from a paste would make every request fail).
+        if (ai !in PROVIDERS || k.isEmpty() || k.length > 500 || k.any { it < '!' || it > '~' }) return false
         return runCatching { prefs.edit().putString(ai, encrypt(k)).apply() }.isSuccess
     }
 
@@ -57,6 +61,8 @@ class AiApi(context: Context, private val runJs: (String) -> Unit) {
                     if (beta.isNotEmpty() && ai == "claude") setRequestProperty("anthropic-beta", beta)
                 }
                 open[id] = conn
+                // Checked after registering conn, so a cancel lands either here or on conn.disconnect().
+                if (cancelled.remove(id)) throw IOException("cancelled")
                 if (method == "POST") {
                     conn.doOutput = true
                     conn.setRequestProperty("Content-Type", "application/json")
@@ -70,17 +76,21 @@ class AiApi(context: Context, private val runJs: (String) -> Unit) {
                     val stream = if (status in 200..299) conn.inputStream else conn.errorStream
                     done(id, status, stream?.bufferedReader()?.use { it.readText() }.orEmpty())
                 }
-            } catch (e: IOException) {
+            } catch (e: Exception) {
+                // Not only IOException: an uncaught exception on this thread would kill the app, and the page must
+                // always hear back so the chat doesn't wait forever.
                 done(id, -1, e.message ?: "network error")
             } finally {
                 open.remove(id)
+                cancelled.remove(id)
                 conn?.disconnect()
             }
         }
     }
 
     fun cancel(id: String) {
-        open.remove(id)?.let { conn -> executor.execute { conn.disconnect() } }
+        val conn = open.remove(id)
+        if (conn == null) cancelled.add(id) else executor.execute { conn.disconnect() }
     }
 
     fun cancelAll() {

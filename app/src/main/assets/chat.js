@@ -115,6 +115,8 @@ function saveMealFromAi(input) {
     updateMeal(target, fresh, v1);
     bringToFront(target);
   } else {
+    // One reply can save several meals within the same millisecond (parallel tool calls), so ids must be checked.
+    fresh.id = newId(meals);
     meals.unshift(fresh);
   }
   let meal = target || fresh;

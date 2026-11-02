@@ -21,11 +21,13 @@ import android.os.Bundle
 import android.os.Handler
 import android.provider.AlarmClock
 import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -34,6 +36,8 @@ import android.widget.Toast
 import android.window.OnBackInvokedDispatcher
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
@@ -41,6 +45,8 @@ class MainActivity : Activity() {
     private val pendingScripts = mutableListOf<String>()
     private var pendingBackupJson: String? = null
     private var isPageLoaded = false
+    // The WebView's renderer died; the WebView can't be used again and the activity is being recreated.
+    private var rendererGone = false
     private var safeTopDp = 44
     private var safeBottomDp = 0
     private var imeBottomDp = 0
@@ -50,6 +56,8 @@ class MainActivity : Activity() {
     private var askingForMic = false
     private val prefs: SharedPreferences by lazy { getSharedPreferences("mealkeeper", MODE_PRIVATE) }
     private val mainHandler = Handler(Looper.getMainLooper())
+    // Reading and writing files other apps hand over (shares, backups) can be slow, so it stays off the main thread.
+    private val io = Executors.newSingleThreadExecutor()
     private val aiApi by lazy { AiApi(this) { script -> mainHandler.post { runJs(script) } } }
     private val voice by lazy { Voice(this) { script -> mainHandler.post { runJs(script) } } }
 
@@ -99,6 +107,18 @@ class MainActivity : Activity() {
                     }
                     return true
                 }
+
+                // The renderer crashed or Android killed it to free memory. Unhandled, that kills the whole app; instead
+                // start the activity over (the page keeps its data in storage). A renderer that crashes again straight
+                // away closes the activity rather than looping.
+                override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                    rendererGone = true
+                    val now = SystemClock.elapsedRealtime()
+                    val crashedAgain = detail.didCrash() && now - lastRendererCrash < RENDERER_RETRY_MS
+                    if (detail.didCrash()) lastRendererCrash = now
+                    if (crashedAgain) finish() else recreate()
+                    return true
+                }
             }
             addJavascriptInterface(MealkeeperBridge(), "MealkeeperAndroid")
         }
@@ -132,7 +152,11 @@ class MainActivity : Activity() {
 
         setContentView(webView)
         setUpSystemBars()
-        handleIncomingIntent(intent)
+        // A recreated activity (dark mode switched, process restarted, renderer replaced) or one reopened from Recents
+        // gets the intent that first started it again; that share was already offered.
+        if (savedInstanceState == null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) {
+            handleIncomingIntent(intent)
+        }
         webView.loadUrl("file:///android_asset/index.html")
     }
 
@@ -235,16 +259,44 @@ class MainActivity : Activity() {
             }
             else -> null
         }
-        val text = file?.let { readSharedFile(it) }
-            ?: if (intent.action == Intent.ACTION_SEND) intent.getStringExtra(Intent.EXTRA_TEXT) else null
+        val sharedText = if (intent.action == Intent.ACTION_SEND) intent.getStringExtra(Intent.EXTRA_TEXT) else null
+        if (file == null) return offerSharedText(sharedText)
+        inBackground({ readText(file, MAX_CLIP_CHARS) ?: sharedText }) { offerSharedText(it) }
+    }
+
+    private fun offerSharedText(text: String?) {
         if (!text.isNullOrBlank()) {
             runJs("if(window.receiveSharedText){window.receiveSharedText(${JSONObject.quote(text)});}")
         }
     }
 
-    private fun readSharedFile(uri: Uri): String? = runCatching {
-        contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-    }.getOrNull()?.takeIf { it.length <= MAX_CLIP_CHARS }
+    // Reads a text file another app handed over, or null if it can't be read or is over maxChars (checked while
+    // reading, so a huge file is never loaded whole).
+    private fun readText(uri: Uri, maxChars: Int): String? = runCatching {
+        contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+            val text = StringBuilder()
+            val buffer = CharArray(8192)
+            while (true) {
+                val n = reader.read(buffer)
+                if (n < 0) break
+                text.append(buffer, 0, n)
+                if (text.length > maxChars) return@use null
+            }
+            text.toString()
+        }
+    }.getOrNull()
+
+    // Runs work on the io thread, then then() on the main thread if the activity is still around.
+    private fun <T> inBackground(work: () -> T, then: (T) -> Unit) {
+        try {
+            io.execute {
+                val result = work()
+                mainHandler.post { if (!isDestroyed) then(result) }
+            }
+        } catch (e: RejectedExecutionException) {
+            // The activity is being destroyed (io is shut down); nothing is left to hand the result to.
+        }
+    }
 
     // Draw behind transparent status and navigation bars on every version (Android 15 forces this anyway);
     // the page pads itself using the insets from applySafeInsets().
@@ -287,11 +339,12 @@ class MainActivity : Activity() {
     }
 
     private fun runJs(script: String) {
+        if (rendererGone || isDestroyed) return
         if (!isPageLoaded) {
             pendingScripts.add(script)
             return
         }
-        webView.post { webView.evaluateJavascript(script, null) }
+        webView.post { if (!rendererGone && !isDestroyed) webView.evaluateJavascript(script, null) }
     }
 
     @Deprecated("Plain Activity has no Activity Result API; this is the framework callback.")
@@ -304,28 +357,34 @@ class MainActivity : Activity() {
                 pendingBackupJson = null
                 if (resultCode != RESULT_OK || uri == null) return
                 // json is null if the process died while the picker was open.
-                val saved = json != null && runCatching {
-                    contentResolver.openOutputStream(uri, "wt")!!.use { it.write(json.toByteArray()) }
-                }.isSuccess
-                runJs("window.onBackupSaved&&window.onBackupSaved($saved)")
+                inBackground({
+                    json != null && runCatching {
+                        contentResolver.openOutputStream(uri, "wt")!!.use { it.write(json.toByteArray()) }
+                    }.isSuccess
+                }) { saved -> runJs("window.onBackupSaved&&window.onBackupSaved($saved)") }
             }
             REQUEST_RESTORE_BACKUP -> {
                 if (resultCode != RESULT_OK || uri == null) return
-                val text = runCatching {
-                    contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
-                }.getOrDefault("")
-                runJs("window.receiveBackupFile&&window.receiveBackupFile(${JSONObject.quote(text)})")
+                inBackground({ readText(uri, MAX_BACKUP_CHARS) }) { text ->
+                    runJs(
+                        if (text == null) "window.notify&&window.notify(${JSONObject.quote(BACKUP_UNREADABLE)})"
+                        else "window.receiveBackupFile&&window.receiveBackupFile(${JSONObject.quote(text)})"
+                    )
+                }
             }
         }
     }
 
     private fun launchMealShare(fileName: String, json: String, text: String, subject: String, chooserTitle: String) {
-        runOnUiThread {
-            val dir = SharedMealProvider.sharedDir(this@MainActivity)
-            // Keep recent files available if an email draft attaches them later, but don't let them pile up.
-            dir.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > SHARED_FILE_MAX_AGE_MS }?.forEach { it.delete() }
-            val file = File(dir, fileName.replace(Regex("[^A-Za-z0-9 ._()&'-]"), "_").take(100))
-            file.writeText(json)
+        inBackground({
+            runCatching {
+                val dir = SharedMealProvider.sharedDir(this@MainActivity)
+                // Keep recent files available if an email draft attaches them later, but don't let them pile up.
+                dir.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > SHARED_FILE_MAX_AGE_MS }?.forEach { it.delete() }
+                File(dir, sharedFileName(fileName)).apply { writeText(json) }
+            }.getOrNull()
+        }) { file ->
+            if (file == null) return@inBackground runJs("window.notify&&window.notify(${JSONObject.quote(SHARE_FAILED)})")
             val uri = SharedMealProvider.uriFor(this@MainActivity, file)
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "application/json"
@@ -339,6 +398,14 @@ class MainActivity : Activity() {
                 .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(this@MainActivity, MainActivity::class.java)))
             startOther(chooser)
         }
+    }
+
+    // A safe, short file name that keeps the .prompttopan.json ending however long the meal's name is.
+    private fun sharedFileName(fileName: String): String {
+        val safe = fileName.replace(Regex("[^A-Za-z0-9 ._()&'-]"), "_")
+        val ending = MEAL_FILE_ENDING.takeIf { safe.endsWith(it) } ?: ""
+        val base = safe.removeSuffix(ending).take(MAX_FILE_NAME - ending.length).trim(' ', '.').ifEmpty { "meal" }
+        return base + ending
     }
 
     inner class MealkeeperBridge {
@@ -529,7 +596,7 @@ class MainActivity : Activity() {
     override fun onBackPressed() = goBack()
 
     private fun goBack() {
-        if (!::webView.isInitialized || !isPageLoaded) {
+        if (!::webView.isInitialized || !isPageLoaded || rendererGone) {
             leave()
             return
         }
@@ -545,6 +612,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
+        io.shutdown()
         aiApi.cancelAll()
         if (voiceUsed) voice.release()
         if (::webView.isInitialized) {
@@ -563,6 +631,16 @@ class MainActivity : Activity() {
         private const val SHARED_FILE_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
         private const val PREF_LAST_CLIP = "lastClipTimestamp"
         private const val MAX_CLIP_CHARS = 500_000
+        // Backups hold every meal, so they get far more room than a single shared meal.
+        private const val MAX_BACKUP_CHARS = 20_000_000
+        private const val BACKUP_UNREADABLE = "Couldn't read that file. It may be too big or not a backup."
+        private const val SHARE_FAILED = "Couldn't prepare the meal file to share. Please try again."
+        private const val MEAL_FILE_ENDING = ".prompttopan.json"
+        private const val MAX_FILE_NAME = 100
+        // A renderer that crashes again within this long of the last crash isn't restarted again.
+        private const val RENDERER_RETRY_MS = 10_000L
+        // Kept across recreations (it's the activity that's replaced, not the process).
+        private var lastRendererCrash = -RENDERER_RETRY_MS
         // The page refers to the AI apps by these keys; the packages are also listed under <queries> in the manifest.
         private val AI_APPS = mapOf(
             "chatgpt" to AiApp("com.openai.chatgpt", "ChatGPT", shareFillsMessageBox = true),

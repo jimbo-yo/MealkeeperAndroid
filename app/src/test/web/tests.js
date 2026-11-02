@@ -18,6 +18,8 @@ openUrl = url => opened.push(url);
 
 function reset() {
   localStorage.clear();
+  deferredClip = null;
+  storageWarned = false;
   opened.length = 0;
   closeModal();
   meals.length = 0;
@@ -633,10 +635,14 @@ test('copied text that isn\'t a meal is ignored', () => {
   eq(modalOpen(), false);
 });
 
-test('no offer while a dialog is open or when the setting is off', () => {
+test('a copy that arrives during a dialog waits for it to close; none when the setting is off', () => {
   openImport();
   receiveClipboardText(sampleExport);
   assert(modal().textContent.includes('Import AI-generated recipes'), 'replaced the open dialog');
+  closeModal();
+  offerDeferredClip();  // what closeModal's timer runs
+  assert(modal().textContent.includes('Import Mediterranean chicken bowls?'), modal().textContent);
+  pendingImport = null;
   closeModal();
   setClipOffer(false);
   receiveClipboardText(sampleExport);
@@ -1622,6 +1628,58 @@ test('a chat revision that changes a keeper offers a review on its card', () => 
   assert(review, main().textContent);
   review.click();
   assert(modal().textContent.includes('Update your keeper'), modal().textContent);
+});
+
+test('meals saved together in one reply get distinct ids', () => {
+  connect('claude');
+  newChat('claude');
+  let v1 = toV1Meal(meals[0]);
+  delete v1.mealkeeper_id;
+  let before = meals.length;
+  ['Monday', 'Tuesday', 'Wednesday'].forEach(name => saveMealFromAi({...v1, name}));
+  eq(meals.length, before + 3);
+  eq(new Set(meals.map(m => m.id)).size, meals.length, 'ids are unique');
+});
+
+test('when storage is full the chat is dropped from the save so meals are kept', () => {
+  connect('claude');
+  newChat('claude');
+  chat.items.push({role: 'user', text: 'hello'});
+  let setItem = Storage.prototype.setItem;
+  Storage.prototype.setItem = function(key, value) {
+    if (JSON.parse(value).chat) throw new DOMException('full', 'QuotaExceededError');
+    return setItem.call(this, key, value);
+  };
+  try {
+    meals[0].name = 'Renamed';
+    saveState();
+  } finally {
+    Storage.prototype.setItem = setItem;
+  }
+  let saved = JSON.parse(localStorage.getItem(STORE_KEY));
+  eq([saved.meals[0].name, saved.chat], ['Renamed', null]);
+  assert(document.getElementById('toast').textContent.includes('Storage is full'), 'user is told');
+});
+
+test('the Keepers search still applies when coming back to the list', () => {
+  keep('Lemon ricotta cups');
+  keep('Sausage & pepper rigatoni');
+  closeModal();
+  mealsTab = 'keepers';
+  go('meals');
+  keeperQuery = 'lemon';
+  go('home');
+  go('meals');
+  eq([...main().querySelectorAll('.keeper-row')].filter(r => !r.hidden).map(r => r.querySelector('h3').textContent), ['Lemon ricotta cups']);
+});
+
+test('an export whose "meals" isn\'t a list gets a message, not an error', () => {
+  openImport();
+  document.getElementById('import-area').value = '{"meals": "abc"}';
+  doImport();
+  assert(document.getElementById('toast').textContent.includes('no meals'), document.getElementById('toast').textContent);
+  receiveBackupFile('{"meals": "abc"}');
+  assert(document.getElementById('toast').textContent.includes('isn\'t a Prompt to Pan backup'), document.getElementById('toast').textContent);
 });
 
 test('deleting a meal offers to keep its recipes first', () => {
