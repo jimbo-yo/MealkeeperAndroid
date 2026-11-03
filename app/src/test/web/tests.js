@@ -676,6 +676,26 @@ test('the AI is asked to say when the JSON is complete', () => {
   assert(bridge.calls.filter(c => c[0] === 'sendToAiApp').pop()[2].includes('"✅ Ready to copy"'), 'revise prompt');
 });
 
+test('Revise with AI asks Claude for a file it can update the meal from, and others for a code block', () => {
+  openMeal(1);
+  myAi = 'claude';
+  reviseMeal();
+  assert(modal().textContent.includes('tap Download and choose Prompt to Pan'), modal().textContent);
+  sendToAi();
+  let claude = bridgeCalls('sendToAiApp').pop()[2];
+  assert(claude.includes('.prompttopan.json') && claude.includes('open the file in Prompt to Pan'), 'asks for a file');
+  assert(claude.includes('Keep "mealkeeper_id" unchanged') && claude.includes('"✅ Ready to copy"'), 'keeps the id; code block fallback');
+  // The file Claude makes, opened in the app, updates the meal rather than adding a copy.
+  let fileText = JSON.stringify(parseMealkeeperJson(claude));
+  receiveSharedText(fileText);
+  assert(modal().textContent.includes('Update Sunday Italian supper?'), modal().textContent);
+  myAi = 'chatgpt';
+  reviseMeal();
+  sendToAi();
+  let chatgpt = bridgeCalls('sendToAiApp').pop()[2];
+  assert(!chatgpt.includes('.prompttopan.json') && chatgpt.includes('"✅ Ready to copy"'), 'ChatGPT keeps the code block');
+});
+
 test('copied text that isn\'t a meal is ignored', () => {
   receiveClipboardText('{"recipes": "not really"}');
   receiveClipboardText('some "meals" talk');

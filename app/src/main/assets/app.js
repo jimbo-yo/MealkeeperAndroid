@@ -1423,12 +1423,14 @@ function sendPrompt(ai, prompt) {
 function reviseMeal() {
   let m = currentMeal();
   if (!m) return;
-  let json = JSON.stringify({format: 'mealkeeper-v1', meals: [toV1Meal(m)]});
-  aiModal('REVISE WITH AI', `Change “${m.name}”`, hasKey(myAi) ? 'Say what to change. Your AI gets the whole meal, and when you agree on the new version it updates the meal here.' : 'Say what to change. Your AI gets the whole meal. When it replies with the new version, copy it and come back to update the meal here.',
+  let json = JSON.stringify({format: 'mealkeeper-v1', meals: [toV1Meal(m)]}),
+    // Claude can make files (see SKILL_MD), so it's asked for one; ChatGPT and Grok reply with a code block to copy.
+    asFile = () => myAi === 'claude';
+  aiModal('REVISE WITH AI', `Change “${m.name}”`, hasKey(myAi) ? 'Say what to change. Your AI gets the whole meal, and when you agree on the new version it updates the meal here.' : asFile() ? `Say what to change. Claude gets the whole meal. When it saves the new version as a file, tap Download and ${inAndroidApp() ? 'choose Prompt to Pan' : 'then here tap Import and Open a file'} to update the meal.` : 'Say what to change. Your AI gets the whole meal. When it replies with the new version, copy it and come back to update the meal here.',
     'e.g. make it vegetarian', ['Make it vegetarian', `Serve ${m.servings * 2} instead of ${m.servings}`, 'Make it quicker for a weeknight', 'Add a dessert'],
     (request, inApp) => `Here's a meal from my Prompt to Pan app. ${request || 'I want to change it. Ask me what I have in mind.'}
 
-Talk it through with me if you need to. ${inApp ? 'When the new version is ready, save it with save_meal, keeping its mealkeeper_id so the app updates this meal instead of adding a copy.' : 'When the new version is ready (or when I say "send it to the pan"), reply with one compact JSON code block in the same format, then the line "✅ Ready to copy", keeping "mealkeeper_id" unchanged so Prompt to Pan updates the meal instead of adding a copy.'} Update the shopping list and timeline to match.
+Talk it through with me if you need to. ${inApp ? 'When the new version is ready, save it with save_meal, keeping its mealkeeper_id so the app updates this meal instead of adding a copy.' : asFile() ? `When the new version is ready (or when I say "send it to the pan"), save it as a file named after the meal, ending in .prompttopan.json, holding only compact JSON in the same format, and tell me in one sentence to tap Download and open the file in Prompt to Pan. Keep "mealkeeper_id" unchanged so Prompt to Pan updates the meal instead of adding a copy. Only if you can't create files, reply instead with one compact JSON code block in the same format, then the line "✅ Ready to copy".` : 'When the new version is ready (or when I say "send it to the pan"), reply with one compact JSON code block in the same format, then the line "✅ Ready to copy", keeping "mealkeeper_id" unchanged so Prompt to Pan updates the meal instead of adding a copy.'} Update the shopping list and timeline to match.
 
 ${json}`, null, m.name);
 }
