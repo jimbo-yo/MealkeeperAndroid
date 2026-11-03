@@ -23,7 +23,10 @@ let navStack = [],
   lastClipOffer = null,
   pendingImport = null,
   pendingAsk = null,
-  deferredClip = null;
+  deferredClip = null,
+  // The user's Claude project (its claude.ai link), so Revise and Ask can send there; see sendToProject.
+  claudeProject = '',
+  pendingProjectAfter = null;
 
 const STORE_KEY = 'mealkeeper.state.v1',
   BACKUP_FORMAT = 'mealkeeper-backup-v1';
@@ -500,6 +503,7 @@ function saveState() {
     clipOffer,
     ai: myAi,
     appearance,
+    claudeProject,
     ...chatState()
   };
   try {
@@ -547,6 +551,7 @@ function applyState(s) {
   let ai = s.ai || s.aiTab;
   if (ai in AI_GUIDES) myAi = ai;
   if (APPEARANCES[s.appearance]) appearance = s.appearance;
+  if (claudeProjectLink(s.claudeProject)) claudeProject = claudeProjectLink(s.claudeProject);
   applyChatState(s);
 }
 
@@ -990,7 +995,7 @@ ${skill}<div class="panel">${step('1', claude ? 'Or set up a Claude project' : '
 <div class="muted small" style="margin-top:4px">Your AI</div>${aiChoice()}
 <ol style="padding-left:20px;margin:0 0 14px;line-height:1.6;font-size:14px">${guide.steps.map(x => `<li style="margin-bottom:6px">${x}</li>`).join('')}</ol>
 <div class="actions"><button class="primary" onclick="copySetup()">▣ Copy instructions</button><button class="secondary" onclick="openAi(myAi)">Open ${guide.name} ↗</button></div>
-<details style="margin-top:14px"><summary class="muted small">Show the instructions</summary><textarea class="field" rows="12" readonly style="margin-top:10px">${escapeHtml(setupInstructions(myAi))}</textarea></details></div>
+${claude ? projectLinkField() : ''}<details style="margin-top:14px"><summary class="muted small">Show the instructions</summary><textarea class="field" rows="12" readonly style="margin-top:10px">${escapeHtml(setupInstructions(myAi))}</textarea></details></div>
 <div class="panel">${step('2', 'Plan, then send it here', `When the meal is right, say “send it to the pan”. Tap <strong>Copy</strong> on the code block it replies with, then come back here. ${!inAndroidApp() ? 'Then tap <strong>Import</strong> and <strong>Paste</strong>.' : clipOffer ? 'Prompt to Pan will offer to import it.' : 'Then tap Import and paste it. (Turn on “Offer to import copied meals” in Settings to skip this.)'}`)}
 ${inAndroidApp() ? step('↗', 'Or share it', 'Long-press the reply, tap <strong>Share</strong>, and pick Prompt to Pan.') : ''}
 <button class="secondary" onclick="openImport()">↥ Import manually</button></div>
@@ -1386,8 +1391,10 @@ function sharePrompt() {
 // gets inApp = true, and title is what the chat shows the question is about.
 function aiModal(eyebrow, title, intro, placeholder, chips, build, after, about) {
   pendingAsk = {build, after, about};
-  let name = AI_GUIDES[myAi].name, inApp = hasKey(myAi);
-  openModal(`<div class="eyebrow">${eyebrow}</div><h2>${escapeHtml(title)}</h2><p class="subhead" style="margin-bottom:12px">${intro}</p><textarea id="ai-request" class="field" rows="3" style="min-height:90px" placeholder="${escapeHtml(placeholder)}"></textarea><div class="actions" style="margin-top:10px">${chips.map(c => `<button class="outline" style="font-size:12px;padding:7px 12px" onclick="document.getElementById('ai-request').value=this.textContent">${escapeHtml(c)}</button>`).join('')}</div><p class="muted small" style="margin:14px 0 0">${inApp ? `${name} answers here in the app.` : `Opens a new chat in ${name}.`} <button class="text-btn" style="font-size:12px" onclick="closeModal();go('settings')">Change</button></p><div class="modal-foot"><button class="primary" onclick="sendToAi()">Ask ${name}${inApp ? '' : ' ↗'}</button></div>`);
+  let name = AI_GUIDES[myAi].name, inApp = hasKey(myAi),
+    // Without a key, Claude can be asked inside the user's project (a share can only start an ordinary chat).
+    toProject = !inApp && myAi === 'claude' && !!claudeProject;
+  openModal(`<div class="eyebrow">${eyebrow}</div><h2>${escapeHtml(title)}</h2><p class="subhead" style="margin-bottom:12px">${intro}</p><textarea id="ai-request" class="field" rows="3" style="min-height:90px" placeholder="${escapeHtml(placeholder)}"></textarea><div class="actions" style="margin-top:10px">${chips.map(c => `<button class="outline" style="font-size:12px;padding:7px 12px" onclick="document.getElementById('ai-request').value=this.textContent">${escapeHtml(c)}</button>`).join('')}</div><p class="muted small" style="margin:14px 0 0">${inApp ? `${name} answers here in the app.` : toProject ? `Ask in your ${name} project, or in a new chat.` : `Opens a new chat in ${name}.`} <button class="text-btn" style="font-size:12px" onclick="closeModal();go('settings')">Change</button></p><div class="modal-foot">${toProject ? `<button class="secondary" onclick="sendToAi()">New chat ↗</button><button class="primary" onclick="sendToProject()">Ask in my project ↗</button>` : `<button class="primary" onclick="sendToAi()">Ask ${name}${inApp ? '' : ' ↗'}</button>`}</div>`);
 }
 
 function sendToAi() {
@@ -1401,6 +1408,45 @@ function sendToAi() {
   if (inApp) return startChat(request || 'Help me with this.', prompt, about);
   if (after) after();
   sendPrompt(myAi, prompt);
+}
+
+// The Claude app opens a project's claude.ai link on that project, but nothing can start a chat there with text in it,
+// so the prompt is copied and the user pastes it into a new chat in the project. The steps are shown before Claude
+// opens, since nothing in Prompt to Pan is visible once it has.
+function sendToProject() {
+  if (!pendingAsk) return;
+  let {build, after} = pendingAsk, prompt = build(document.getElementById('ai-request').value.trim(), false);
+  pendingAsk = null;
+  pendingProjectAfter = after;
+  copyText(prompt, 'Prompt copied');
+  openModal(`<div class="eyebrow">CLAUDE PROJECT</div><h2>Prompt copied</h2><p class="subhead">Claude opens on your project. Start a new chat there, then press and hold in the message box and tap <strong>Paste</strong>.</p><div class="modal-foot"><button class="outline" onclick="pendingProjectAfter=null;closeModal()">Cancel</button><button class="primary" onclick="openClaudeProject()">Open project ↗</button></div>`, true);
+}
+
+function openClaudeProject() {
+  let after = pendingProjectAfter;
+  pendingProjectAfter = null;
+  closeModal();
+  if (after) after();
+  openUrl(claudeProject);
+}
+
+// A claude.ai project link as copied from the browser's address bar (anything after the project's id is dropped), or ''.
+function claudeProjectLink(text) {
+  let m = str(text).trim().match(/^https:\/\/claude\.ai\/project\/[A-Za-z0-9-]+/);
+  return m ? m[0] : '';
+}
+
+// On Plan with AI, with the Claude project steps.
+function projectLinkField() {
+  return `<label class="field-label" for="claude-project">Your project's link (optional)</label><p class="muted small" style="margin:0 0 8px;line-height:1.5">Lets Revise with AI and Ask AI send to this project. In claude.ai in a browser, open the project and copy the address.</p><div class="row" style="flex-wrap:nowrap"><input class="field" id="claude-project" type="url" autocapitalize="off" spellcheck="false" placeholder="https://claude.ai/project/…" value="${escapeHtml(claudeProject)}" style="margin:0;flex:1;min-width:0"><button class="secondary" style="flex:none;white-space:nowrap" onclick="saveClaudeProject()">Save</button></div>`;
+}
+
+function saveClaudeProject() {
+  let text = document.getElementById('claude-project').value, link = claudeProjectLink(text);
+  if (text.trim() && !link) return notify('That isn\'t a Claude project link. It starts with https://claude.ai/project/', 5000);
+  claudeProject = link;
+  render();
+  notify(link ? 'Revise with AI and Ask AI can now send to your project' : 'Project link removed');
 }
 
 // Starts a new chat with the prompt. On Android it goes to the ChatGPT or Claude app as a share, landing in the

@@ -11,6 +11,7 @@ const lastAwakeCall = () => awakeCalls().pop();
 const bridgeCalls = name => bridge.calls.filter(c => c[0] === name);
 const times = () => [...main().querySelectorAll('.time')].map(e => e.textContent);
 const hasMarkup = el => el.querySelector('b, i, u, img, script');
+const buttonTexts = el => [...el.querySelectorAll('button')].map(b => b.textContent);
 
 // Stand-in for openUrl, which on Android would navigate the test page away.
 let opened = [];
@@ -36,6 +37,8 @@ function reset() {
   pendingRestore = null;
   pendingImport = null;
   pendingAsk = null;
+  claudeProject = '';
+  pendingProjectAfter = null;
   myAi = 'chatgpt';
   appearance = 'light';
   clipOffer = true;
@@ -694,6 +697,40 @@ test('Revise with AI asks Claude for a file it can update the meal from, and oth
   sendToAi();
   let chatgpt = bridgeCalls('sendToAiApp').pop()[2];
   assert(!chatgpt.includes('.prompttopan.json') && chatgpt.includes('"✅ Ready to copy"'), 'ChatGPT keeps the code block');
+});
+
+test('a saved Claude project link lets Revise send there: copied prompt, then the project opens', () => {
+  const LINK = 'https://claude.ai/project/0193a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b';
+  go('ai');
+  assert(!document.getElementById('claude-project'), 'only with Claude chosen');
+  setMyAi('claude');
+  let field = document.getElementById('claude-project');
+  field.value = 'https://example.com/project/abc';
+  saveClaudeProject();
+  eq(claudeProject, '', 'not a Claude project link');
+  document.getElementById('claude-project').value = `  ${LINK}?tab=chats `;
+  saveClaudeProject();
+  eq(claudeProject, LINK, 'trimmed to the project link');
+  eq(JSON.parse(localStorage.getItem(STORE_KEY)).claudeProject, LINK, 'saved');
+
+  opened = [];
+  openMeal(1);
+  reviseMeal();
+  eq(buttonTexts(modal()).slice(-2), ['New chat ↗', 'Ask in my project ↗']);
+  document.getElementById('ai-request').value = 'Make it vegetarian';
+  [...modal().querySelectorAll('button')].find(b => b.textContent === 'Ask in my project ↗').click();
+  let copied = bridgeCalls('copyText').pop()[1];
+  assert(copied.includes('Make it vegetarian') && copied.includes('"mealkeeper_id":"1"'), 'prompt copied');
+  eq([bridgeCalls('sendToAiApp').length, opened.length], [0, 0], 'nothing opened before the steps are read');
+  assert(modal().textContent.includes('Start a new chat there'), modal().textContent);
+  [...modal().querySelectorAll('button')].find(b => b.textContent === 'Open project ↗').click();
+  eq([opened, modalOpen()], [[LINK], false]);
+
+  // With an API key the in-app chat answers instead, so there's no project choice.
+  bridge.keys = {claude: true};
+  refreshAiKeys();
+  reviseMeal();
+  assert(!buttonTexts(modal()).includes('Ask in my project ↗'), 'in-app chat instead');
 });
 
 test('copied text that isn\'t a meal is ignored', () => {
@@ -1835,7 +1872,6 @@ function asWeb(fn, {ios = false, standalone = false} = {}) {
 }
 
 const notice = () => document.getElementById('web-notice');
-const buttonTexts = el => [...el.querySelectorAll('button')].map(b => b.textContent);
 
 test('on an iPhone in Safari the banner explains Add to Home Screen, until dismissed', () => {
   asWeb(() => {
