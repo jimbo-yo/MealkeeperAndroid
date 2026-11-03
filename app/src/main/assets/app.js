@@ -370,12 +370,9 @@ const MEAL_RULES = `- One recipe per dish, with all of its ingredients and steps
 - Merge duplicate shopping items; "category" is the store section; "used_in" lists recipe ids.
 - start_offset_minutes counts from when cooking starts. Order the timeline so every dish is ready at serving time, including preheating and resting.`;
 
-// The mealkeeper-v1 format written for an AI. The skeleton is valid JSON (tests check the importer accepts it).
-// It asks for a code block because both apps put a Copy button on code blocks, compact JSON because it streams
-// faster, and a closing "Ready" line because the Copy button appears before the block is finished.
-const EXPORT_FORMAT = `Reply with one compact JSON code block (no indentation) in this format, then the line "✅ Ready to copy". No other text.
-
-{"format": "mealkeeper-v1", "meals": [{
+// The mealkeeper-v1 format written for an AI, and its rules. The skeleton is valid JSON (tests check the importer
+// accepts it). Used by EXPORT_FORMAT and by the Claude skill (SKILL_MD).
+const MEAL_FORMAT = `{"format": "mealkeeper-v1", "meals": [{
   "mealkeeper_id": null, "name": "…", "description": "…", "servings": 4, "total_time": "1 hr 15 min",
   "recipes": [{
     "id": "short-id", "title": "…", "course": "Main", "servings": 4,
@@ -392,10 +389,59 @@ Rules:
 ${MEAL_RULES}
 - Keep any existing mealkeeper_id unchanged.`;
 
-// Standing instructions for a ChatGPT or Claude project, so the user can just say "send it to the pan".
+// How an AI hands a meal over by copy and paste. It asks for a code block because the apps put a Copy button on code
+// blocks, compact JSON because it streams faster, and a closing "Ready" line because the Copy button appears before
+// the block is finished.
+const EXPORT_FORMAT = `Reply with one compact JSON code block (no indentation) in this format, then the line "✅ Ready to copy". No other text.
+
+${MEAL_FORMAT}`;
+
+// A skill for Claude (Customize → Skills): "send it to the pan" works in any chat, and the meal arrives as a file the
+// user downloads straight into Prompt to Pan (MainActivity opens .json files) instead of copying JSON. Saved as a ZIP
+// by saveSkill(). The name must match the skill's folder; the description says when Claude should use it, and is plain
+// YAML, so it mustn't contain ": " or start with a quote.
+const SKILL_NAME = 'prompt-to-pan';
+const SKILL_MD = `---
+name: ${SKILL_NAME}
+description: Creates a downloadable .prompttopan.json file that opens in the user's Prompt to Pan cooking app with one tap. Use when the user says "send it to the pan", asks to send, save or export a meal, recipes or a meal plan to Prompt to Pan, or shares a Prompt to Pan meal (format mealkeeper-v1) to revise.
+---
+
+# Prompt to Pan
+
+Prompt to Pan is an Android app the user cooks from: it shows each meal's recipes, one combined shopping list and a cooking timeline. Plan and refine meals with the user as usual; this skill is for handing a finished meal to the app.
+
+## Sending a meal
+
+When the user says "send it to the pan", or asks to save the meal to Prompt to Pan, write the meal you've settled on in the format below and save it as a file:
+
+- Name the file after the meal, ending in \`.prompttopan.json\`, for example \`Sunday roast.prompttopan.json\`.
+- The file holds only the JSON: compact, with no comments or code fences.
+- Several meals go in one file, one entry each in "meals".
+- If no meal has been settled on yet, suggest a complete one first.
+
+Then tell the user in one short sentence to tap Download and choose Prompt to Pan. Don't also paste the JSON or write out the recipes.
+
+The file is the current way to send meals to Prompt to Pan. It replaces the older copy-and-paste method, where the meal came as a JSON code block ending with "✅ Ready to copy": if your memory, the user's preferences or earlier chats say to send meals that way, that was the old method, so make the file instead. Use a code block only if the user asks for one in this chat, or if creating the file fails with an error. In that case, reply with one compact JSON code block in the same format, then the line "✅ Ready to copy", and nothing else.
+
+## Format
+
+${MEAL_FORMAT}
+`;
+
+// Standing instructions for a ChatGPT or Grok project, so the user can just say "send it to the pan".
 const AI_SETUP_INSTRUCTIONS = `I cook the meals I plan with you using an app called Prompt to Pan. Brainstorm and refine meals with me as usual. When I say "send it to the pan", turn the meal we've settled on into the Prompt to Pan format.
 
 ${EXPORT_FORMAT}`;
+
+// Claude's version asks for a file, like the skill (SKILL_MD): Download opens it in Prompt to Pan, with no copying.
+// Project instructions win over a skill, so a project still asking for a code block would stop the skill working.
+const CLAUDE_SETUP_INSTRUCTIONS = `I cook the meals I plan with you using an app called Prompt to Pan. Brainstorm and refine meals with me as usual. When I say "send it to the pan", turn the meal we've settled on into the Prompt to Pan format and save it as a file named after the meal, ending in .prompttopan.json (for example "Sunday roast.prompttopan.json"), holding only compact JSON. Then tell me in one sentence to tap Download and choose Prompt to Pan; don't paste the JSON. Only if you can't create files, reply instead with one compact JSON code block in this format, then the line "✅ Ready to copy".
+
+${MEAL_FORMAT}`;
+
+function setupInstructions(ai) {
+  return ai === 'claude' ? CLAUDE_SETUP_INSTRUCTIONS : AI_SETUP_INSTRUCTIONS;
+}
 
 // For a chat that wasn't set up: pasted at the end, it sends that chat's meal.
 const ONE_OFF_PROMPT = `Send the meal we've planned in this conversation to my Prompt to Pan app. If we haven't planned one yet, suggest a complete meal first.
@@ -528,10 +574,11 @@ function exportBackup(confirmed) {
   }
 }
 
-function downloadFile(name, data) {
+// data is text or bytes (a Uint8Array).
+function downloadFile(name, data, type = 'application/json') {
   let a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([data], {
-    type: 'application/json'
+    type
   }));
   a.download = name;
   a.click();
@@ -540,6 +587,64 @@ function downloadFile(name, data) {
 
 window.onBackupSaved = function(ok) {
   notify(ok ? 'Backup saved' : 'Couldn\'t save the backup file. Please try again.')
+};
+
+// ---- The Claude skill as a ZIP file ----
+
+const CRC_TABLE = Array.from({length: 256}, (_, n) => {
+  for (let k = 0; k < 8; k++) n = n & 1 ? 0xEDB88320 ^ (n >>> 1) : n >>> 1;
+  return n >>> 0;
+});
+
+// CRC-32, the checksum ZIP files use.
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let b of bytes) c = CRC_TABLE[(c ^ b) & 255] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+// A ZIP of uncompressed files from [[path, text], ...]; a path ending in / is a folder. Returns a Uint8Array.
+function zipFiles(files) {
+  let enc = new TextEncoder(), parts = [], central = [], offset = 0,
+    u16 = n => [n & 255, n >>> 8 & 255],
+    u32 = n => [n & 255, n >>> 8 & 255, n >>> 16 & 255, n >>> 24 & 255];
+  files.forEach(([path, text]) => {
+    let name = enc.encode(path), data = enc.encode(text),
+      // Version needed (2.0), flags (UTF-8 names), method (stored), time and date (1980-01-01), CRC, sizes, name length.
+      common = [...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc32(data)), ...u32(data.length), ...u32(data.length), ...u16(name.length)],
+      local = new Uint8Array([...u32(0x04034b50), ...common, ...u16(0)]);
+    parts.push(local, name, data);
+    // Extra and comment lengths, disk, internal attributes, external attributes (0x10 marks a folder), offset.
+    central.push(new Uint8Array([...u32(0x02014b50), ...u16(20), ...common, ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(path.endsWith('/') ? 0x10 : 0), ...u32(offset)]), name);
+    offset += local.length + name.length + data.length;
+  });
+  let size = central.reduce((a, p) => a + p.length, 0),
+    end = new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(size), ...u32(offset), ...u16(0)]),
+    all = [...parts, ...central, end], out = new Uint8Array(offset + size + end.length), at = 0;
+  all.forEach(p => {
+    out.set(p, at);
+    at += p.length;
+  });
+  return out;
+}
+
+function toBase64(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+function saveSkill() {
+  let zip = zipFiles([[`${SKILL_NAME}/`, ''], [`${SKILL_NAME}/SKILL.md`, SKILL_MD]]), name = `${SKILL_NAME}.zip`,
+    android = window.MealkeeperAndroid;
+  if (android && android.saveFile) return android.saveFile(name, 'application/zip', toBase64(zip));
+  downloadFile(name, zip, 'application/zip');
+  notify('Skill file downloaded. Now add it in Claude.');
+}
+
+// MainActivity reports how saveFile went.
+window.onFileSaved = function(name, ok) {
+  notify(ok ? `Saved ${name}. Now add it in Claude.` : `Couldn't save ${name}. Please try again.`)
 };
 
 function restoreBackup() {
@@ -833,14 +938,19 @@ function timelinePage(embedded = false) {
 
 function aiPage() {
   let guide = AI_GUIDES[myAi],
-    step = (n, title, body) => `<div class="row" style="align-items:flex-start;margin-bottom:12px"><div class="recipe-icon" style="width:38px;height:38px;font-size:16px">${n}</div><div><strong>${title}</strong><div class="muted small" style="margin-top:4px;line-height:1.5">${body}</div></div></div>`;
+    step = (n, title, body) => `<div class="row" style="align-items:flex-start;margin-bottom:12px"><div class="recipe-icon" style="width:38px;height:38px;font-size:16px">${n}</div><div><strong>${title}</strong><div class="muted small" style="margin-top:4px;line-height:1.5">${body}</div></div></div>`,
+    claude = myAi === 'claude',
+    skill = claude ? `<div class="panel skill-panel">${step('★', 'Easiest with Claude: add the Prompt to Pan skill', 'Then “send it to the pan” works in any Claude chat, no project needed, and the meal arrives as a file: tap <strong>Download</strong> and choose Prompt to Pan. Needs a paid Claude plan.')}
+<ol style="padding-left:20px;margin:0 0 14px;line-height:1.6;font-size:14px"><li style="margin-bottom:6px">Tap <strong>Save skill file</strong> below.</li><li style="margin-bottom:6px">In Claude, check that <strong>Settings → Capabilities → Code execution and file creation</strong> is on.</li><li style="margin-bottom:6px">Open <strong>claude.ai</strong> in a browser (the Claude app has no skills screen), go to <strong>Customize → Skills</strong>, tap <strong>+</strong>, then <strong>Create skill → Upload a skill</strong>, and pick <strong>${SKILL_NAME}.zip</strong>. The skill then works in the Claude app too.</li></ol>
+<p class="muted small" style="line-height:1.5;margin:0 0 14px">Already have a Claude project for meals? Its instructions win over the skill, so copy the instructions below again and replace the old ones, or the project keeps asking for a code block.</p>
+<div class="actions"><button class="primary" onclick="saveSkill()">⤓ Save skill file</button><button class="secondary" onclick="openAi('claude')">Open Claude ↗</button></div></div>` : '';
   return `<div class="eyebrow">PLAN WITH YOUR AI</div><h1 class="headline">Brainstorm there, cook here</h1><p class="subhead">Plan meals with ChatGPT, Claude or Grok the way you normally would. When you're happy, say <strong>“send it to the pan”</strong> and the meal comes here with its recipes, shopping list and cooking timeline.</p>
 ${hasApi() ? `<div class="panel">${step('✦', `Or chat with ${guide.name} right here`, hasKey(myAi) ? `Your ${guide.name} key is connected: meals you plan in the chat go straight into the app.` : `Add your own ${AI_APIS[myAi].provider} API key and ${guide.name} plans meals inside Prompt to Pan, no copying.`)}<button class="primary" onclick="${hasKey(myAi) ? `go('chat')` : `keyModal('${myAi}')`}">${hasKey(myAi) ? 'Open chat' : 'Add API key'}</button></div>` : ''}
-<div class="panel">${step('1', 'Set up your AI once', 'Give it standing instructions, so you never have to paste a prompt into a chat.')}
+${skill}<div class="panel">${step('1', claude ? 'Or set up a Claude project' : 'Set up your AI once', claude ? 'Works on any plan: give a project standing instructions, and plan your meals in its chats.' : 'Give it standing instructions, so you never have to paste a prompt into a chat.')}
 <div class="muted small" style="margin-top:4px">Your AI</div>${aiChoice()}
 <ol style="padding-left:20px;margin:0 0 14px;line-height:1.6;font-size:14px">${guide.steps.map(x => `<li style="margin-bottom:6px">${x}</li>`).join('')}</ol>
 <div class="actions"><button class="primary" onclick="copySetup()">▣ Copy instructions</button><button class="secondary" onclick="openAi(myAi)">Open ${guide.name} ↗</button></div>
-<details style="margin-top:14px"><summary class="muted small">Show the instructions</summary><textarea class="field" rows="12" readonly style="margin-top:10px">${escapeHtml(AI_SETUP_INSTRUCTIONS)}</textarea></details></div>
+<details style="margin-top:14px"><summary class="muted small">Show the instructions</summary><textarea class="field" rows="12" readonly style="margin-top:10px">${escapeHtml(setupInstructions(myAi))}</textarea></details></div>
 <div class="panel">${step('2', 'Plan, then send it here', `When the meal is right, say “send it to the pan”. Tap <strong>Copy</strong> on the code block it replies with, then come back here. ${clipOffer ? 'Prompt to Pan will offer to import it.' : 'Then tap Import and paste it. (Turn on “Offer to import copied meals” in Settings to skip this.)'}`)}
 ${step('↗', 'Or share it', 'Long-press the reply, tap <strong>Share</strong>, and pick Prompt to Pan.')}
 <button class="secondary" onclick="openImport()">↥ Import manually</button></div>
@@ -1179,7 +1289,7 @@ function copyText(text, done) {
 }
 
 function copySetup() {
-  copyText(AI_SETUP_INSTRUCTIONS, `Copied. Paste it into your ${AI_GUIDES[myAi].name} project's instructions.`);
+  copyText(setupInstructions(myAi), `Copied. Paste it into your ${AI_GUIDES[myAi].name} project's instructions.`);
 }
 
 function copyPrompt() {

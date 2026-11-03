@@ -20,6 +20,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.provider.AlarmClock
+import android.util.Base64
 import android.os.Looper
 import android.os.SystemClock
 import android.view.View
@@ -43,7 +44,8 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     // Scripts that arrive before the page has loaded (shared text, file-picker results) run once it has.
     private val pendingScripts = mutableListOf<String>()
-    private var pendingBackupJson: String? = null
+    // A file waiting for the user to pick where it's saved (see saveToFile).
+    private var pendingSave: PendingSave? = null
     private var isPageLoaded = false
     // The WebView's renderer died; the WebView can't be used again and the activity is being recreated.
     private var rendererGone = false
@@ -352,16 +354,15 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         val uri = data?.data
         when (requestCode) {
-            REQUEST_EXPORT_BACKUP -> {
-                val json = pendingBackupJson
-                pendingBackupJson = null
+            REQUEST_SAVE_FILE -> {
+                val save = pendingSave
+                pendingSave = null
                 if (resultCode != RESULT_OK || uri == null) return
-                // json is null if the process died while the picker was open.
+                // save is null if the process died while the picker was open.
+                if (save == null) return runJs("window.notify&&window.notify(${JSONObject.quote(SAVE_LOST)})")
                 inBackground({
-                    json != null && runCatching {
-                        contentResolver.openOutputStream(uri, "wt")!!.use { it.write(json.toByteArray()) }
-                    }.isSuccess
-                }) { saved -> runJs("window.onBackupSaved&&window.onBackupSaved($saved)") }
+                    runCatching { contentResolver.openOutputStream(uri, "wt")!!.use { it.write(save.bytes) } }.isSuccess
+                }) { saved -> runJs(save.doneScript(saved)) }
             }
             REQUEST_RESTORE_BACKUP -> {
                 if (resultCode != RESULT_OK || uri == null) return
@@ -397,6 +398,26 @@ class MainActivity : Activity() {
             val chooser = Intent.createChooser(send, chooserTitle)
                 .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(this@MainActivity, MainActivity::class.java)))
             startOther(chooser)
+        }
+    }
+
+    // Asks the user where to save a file, then writes it (see onActivityResult); doneScript(saved) tells the page how
+    // it went. noPicker runs if the phone has no file picker.
+    private fun saveToFile(filename: String, mimeType: String, bytes: ByteArray, doneScript: (Boolean) -> String, noPicker: () -> Unit) {
+        runOnUiThread {
+            pendingSave = PendingSave(bytes, doneScript)
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = mimeType
+                putExtra(Intent.EXTRA_TITLE, filename)
+            }
+            try {
+                @Suppress("DEPRECATION")
+                startActivityForResult(intent, REQUEST_SAVE_FILE)
+            } catch (e: ActivityNotFoundException) {
+                pendingSave = null
+                noPicker()
+            }
         }
     }
 
@@ -439,21 +460,18 @@ class MainActivity : Activity() {
         }
 
         @JavascriptInterface
-        fun saveBackupFile(filename: String, json: String) {
-            runOnUiThread {
-                pendingBackupJson = json
-                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "application/json"
-                    putExtra(Intent.EXTRA_TITLE, filename)
-                }
-                try {
-                    @Suppress("DEPRECATION")
-                    startActivityForResult(intent, REQUEST_EXPORT_BACKUP)
-                } catch (e: ActivityNotFoundException) {
-                    pendingBackupJson = null
-                    shareText(json, "Save Prompt to Pan backup", "")
-                }
+        fun saveBackupFile(filename: String, json: String) =
+            saveToFile(filename, "application/json", json.toByteArray(), { "window.onBackupSaved&&window.onBackupSaved($it)" }) {
+                shareText(json, "Save Prompt to Pan backup", "")
+            }
+
+        // Saves a binary file (base64) where the user picks, such as the Claude skill's ZIP; the page hears back
+        // through window.onFileSaved(filename, ok).
+        @JavascriptInterface
+        fun saveFile(filename: String, mimeType: String, base64: String) {
+            val bytes = runCatching { Base64.decode(base64, Base64.DEFAULT) }.getOrNull() ?: return
+            saveToFile(filename, mimeType, bytes, { "window.onFileSaved&&window.onFileSaved(${JSONObject.quote(filename)},$it)" }) {
+                runJs("window.notify&&window.notify('No file picker available on this device')")
             }
         }
 
@@ -623,7 +641,7 @@ class MainActivity : Activity() {
     }
 
     companion object {
-        private const val REQUEST_EXPORT_BACKUP = 41
+        private const val REQUEST_SAVE_FILE = 41
         private const val REQUEST_RESTORE_BACKUP = 42
         private const val REQUEST_MICROPHONE = 43
         private const val PREF_CLIPBOARD_WATCH = "clipboardWatch"
@@ -634,7 +652,8 @@ class MainActivity : Activity() {
         // Backups hold every meal, so they get far more room than a single shared meal.
         private const val MAX_BACKUP_CHARS = 20_000_000
         private const val BACKUP_UNREADABLE = "Couldn't read that file. It may be too big or not a backup."
-        private const val SHARE_FAILED = "Couldn't prepare the meal file to share. Please try again."
+        private const val SAVE_LOST = "The file wasn't saved because the app was closed meanwhile. Please try again."
+        private const val SHARE_FAILED ="Couldn't prepare the meal file to share. Please try again."
         private const val MEAL_FILE_ENDING = ".prompttopan.json"
         private const val MAX_FILE_NAME = 100
         // A renderer that crashes again within this long of the last crash isn't restarted again.
@@ -653,3 +672,5 @@ class MainActivity : Activity() {
 }
 
 private class AiApp(val packageName: String, val name: String, val shareFillsMessageBox: Boolean)
+
+private class PendingSave(val bytes: ByteArray, val doneScript: (Boolean) -> String)

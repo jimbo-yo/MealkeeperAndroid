@@ -7,6 +7,9 @@ window.MealkeeperAndroid = {
   saveBackupFile(filename, json) {
     this.calls.push(['saveBackupFile', filename, json]);
   },
+  saveFile(filename, mimeType, base64) {
+    this.calls.push(['saveFile', filename, mimeType, base64]);
+  },
   openBackupFile() {
     this.calls.push(['openBackupFile']);
   },

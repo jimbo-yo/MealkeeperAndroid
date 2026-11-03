@@ -574,6 +574,53 @@ test('the format the AI is given is one the importer accepts', () => {
   assert(AI_SETUP_INSTRUCTIONS.includes('"send it to the pan"'), 'trigger phrase missing');
 });
 
+// Reads back a ZIP of stored (uncompressed) files: {path: text}, checking each file's CRC.
+function unzip(bytes) {
+  let view = new DataView(bytes.buffer), dec = new TextDecoder(), files = {}, at = 0;
+  while (view.getUint32(at, true) === 0x04034b50) {
+    let crc = view.getUint32(at + 14, true), size = view.getUint32(at + 18, true), nameLength = view.getUint16(at + 26, true),
+      name = dec.decode(bytes.subarray(at + 30, at + 30 + nameLength)), data = bytes.subarray(at + 30 + nameLength, at + 30 + nameLength + size);
+    eq(view.getUint16(at + 8, true), 0, 'stored, not compressed');
+    eq(crc32(data), crc, `CRC of ${name}`);
+    files[name] = dec.decode(data);
+    at += 30 + nameLength + size;
+  }
+  let end = bytes.length - 22;
+  eq(view.getUint32(end, true), 0x06054b50, 'end of central directory');
+  eq(view.getUint16(end + 10, true), Object.keys(files).length, 'entry count');
+  eq(view.getUint32(end + 16, true), at, 'central directory follows the files');
+  return files;
+}
+
+test('CRC-32 matches the standard check value', () => {
+  eq(crc32(new TextEncoder().encode('123456789')), 0xCBF43926);
+});
+
+test('the Claude skill sends meals as a file in the format the importer accepts', () => {
+  assert(SKILL_MD.startsWith(`---\nname: ${SKILL_NAME}\ndescription: `), 'frontmatter');
+  let description = SKILL_MD.split('\n')[2].slice('description: '.length);
+  assert(description.length <= 1024 && description.includes('send it to the pan'), description);
+  assert(!description.includes(': ') && !/^['"]/.test(description), 'description must be a plain YAML value');
+  assert(SKILL_MD.includes(MEAL_FORMAT) && SKILL_MD.includes('.prompttopan.json'), 'format and file name');
+  assert(SKILL_MD.includes('✅ Ready to copy'), 'falls back to a code block without file creation');
+  assert(EXPORT_FORMAT.endsWith(MEAL_FORMAT), 'one format for both');
+});
+
+test('the skill panel shows for Claude and saves a ZIP Claude can upload', () => {
+  go('ai');
+  assert(!main().querySelector('.skill-panel'), 'not for ChatGPT');
+  setMyAi('claude');
+  let button = [...main().querySelectorAll('.skill-panel button')].find(b => b.textContent.includes('Save skill file'));
+  button.click();
+  let [, name, type, base64] = bridgeCalls('saveFile')[0];
+  eq([name, type], ['prompt-to-pan.zip', 'application/zip']);
+  let files = unzip(Uint8Array.from(atob(base64), c => c.charCodeAt(0)));
+  eq(Object.keys(files), ['prompt-to-pan/', 'prompt-to-pan/SKILL.md']);
+  eq(files['prompt-to-pan/SKILL.md'], SKILL_MD);
+  window.onFileSaved('prompt-to-pan.zip', true);
+  assert(document.getElementById('toast').textContent.includes('Now add it in Claude'), 'next step');
+});
+
 test('"Open ChatGPT" opens the app, or the website without it', () => {
   opened = [];
   openAi('chatgpt');
@@ -590,7 +637,7 @@ test('AI screen has setup steps for ChatGPT and Claude', () => {
   setMyAi('claude');
   assert(main().textContent.includes('In Claude, create a project'), 'Claude steps');
   copySetup();
-  eq(bridgeCalls('copyText').map(c => c[1]), [AI_SETUP_INSTRUCTIONS], 'copied through Android');
+  eq(bridgeCalls('copyText').map(c => c[1]), [CLAUDE_SETUP_INSTRUCTIONS], 'copied through Android');
   copyPrompt();
   eq(bridgeCalls('copyText')[1][1], ONE_OFF_PROMPT);
 });
@@ -660,6 +707,17 @@ test('a shared meal is offered; other shared text opens the import dialog', () =
 
 test('setup instructions fit in ChatGPT\'s 1,500-character custom instructions', () => {
   assert(AI_SETUP_INSTRUCTIONS.length <= 1500, AI_SETUP_INSTRUCTIONS.length + ' characters');
+});
+
+test('Claude projects are asked for a file, like the skill, with the code block as the fallback', () => {
+  eq([setupInstructions('chatgpt'), setupInstructions('grok')], [AI_SETUP_INSTRUCTIONS, AI_SETUP_INSTRUCTIONS]);
+  let claude = setupInstructions('claude');
+  assert(claude.includes('.prompttopan.json') && claude.includes('Download') && claude.includes('✅ Ready to copy'), claude);
+  assert(claude.endsWith(MEAL_FORMAT) && claude.includes('"send it to the pan"'), 'format and trigger phrase');
+  assert(parseMealkeeperJson(claude), 'skeleton still parses');
+  go('ai');
+  setMyAi('claude');
+  eq(main().querySelector('details textarea').value, claude, 'the shown instructions are Claude\'s');
 });
 
 // ---- Round trips and asking the AI ----
