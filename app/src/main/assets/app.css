@@ -1179,3 +1179,15 @@ textarea.field {
   word-break: break-all;
   margin: 0 0 12px;
 }
+
+.share-qr-toggle {
+  margin-top: 14px;
+}
+
+.share-qr-toggle summary {
+  cursor: pointer;
+  width: fit-content;
+  color: light-dark(#496548, #b7d2ae);
+  font-size: 13px;
+  font-weight: 700;
+}

@@ -39,6 +39,7 @@ function reset() {
   pendingAsk = null;
   claudeProject = '';
   pendingProjectAfter = null;
+  shareQrOpen = false;
   myAi = 'chatgpt';
   appearance = 'light';
   clipOffer = true;
@@ -2004,6 +2005,13 @@ test('the Share QR code is a well-formed symbol that reads back as the site addr
 
 test('Settings shows the Share QR code and shares the site link', () => {
   go('settings');
+  let toggle = main().querySelector('.share-qr-toggle');
+  eq([toggle.open, toggle.querySelector('summary').textContent], [false, 'Show QR code'], 'folded away at first');
+  toggle.open = true;
+  toggle.dispatchEvent(new Event('toggle'));
+  eq([shareQrOpen, toggle.querySelector('summary').textContent], [true, 'Hide QR code']);
+  render();
+  assert(main().querySelector('.share-qr-toggle').open, 'stays open across re-renders');
   let svg = main().querySelector('.share-qr svg');
   assert(svg && svg.getAttribute('aria-label') === 'QR code for ' + SITE_URL, 'QR code shown');
   assert(main().querySelector('.share-url').textContent === SITE_URL, 'address shown');

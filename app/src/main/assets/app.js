@@ -1019,9 +1019,12 @@ function settingsPage() {
 // The website's front page, which explains the app and how to install the web version (an iPhone's camera opens it).
 const SITE_URL = 'https://jimbo-yo.github.io/MealkeeperAndroid/';
 
-// Settings: a QR code someone can scan to get Prompt to Pan, so nobody has to type the address.
+// Settings: a QR code someone can scan to get Prompt to Pan, so nobody has to type the address. It's folded away until
+// wanted, and stays open across re-renders (shareQrOpen) until the app is next started.
+let shareQrOpen = false;
+
 function sharePanel() {
-  return `<div class="panel share-panel"><div class="row"><div class="recipe-icon">⇪</div><div style="flex:1"><strong>Share Prompt to Pan</strong><div class="muted small" style="margin-top:4px">Let someone scan this with their phone's camera. It opens Prompt to Pan's page, with how to install it on an iPhone.</div></div></div><div class="share-qr">${qrSvg(SITE_URL, 'QR code for ' + SITE_URL)}</div><p class="muted small share-url">${SITE_URL}</p><div class="actions" style="justify-content:center"><button class="secondary" onclick="shareSite()">☍ Share link</button><button class="outline" onclick="copyText(SITE_URL, 'Link copied')">Copy link</button></div></div>`;
+  return `<div class="panel share-panel"><div class="row"><div class="recipe-icon">⇪</div><div style="flex:1"><strong>Share Prompt to Pan</strong><div class="muted small" style="margin-top:4px">Send the link, or let someone scan the QR code with their phone's camera. It opens Prompt to Pan's page, with how to install it on an iPhone.</div></div></div><div class="actions" style="margin-top:14px"><button class="secondary" onclick="shareSite()">☍ Share link</button><button class="outline" onclick="copyText(SITE_URL, 'Link copied')">Copy link</button></div><details class="share-qr-toggle" ${shareQrOpen ? 'open' : ''} ontoggle="shareQrOpen=this.open;this.querySelector('summary').textContent=(this.open?'Hide':'Show')+' QR code'"><summary>${shareQrOpen ? 'Hide' : 'Show'} QR code</summary><div class="share-qr">${qrSvg(SITE_URL, 'QR code for ' + SITE_URL)}</div><p class="muted small share-url">${SITE_URL}</p></details></div>`;
 }
 
 function shareSite() {
