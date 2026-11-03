@@ -1927,6 +1927,86 @@ test('Plan with AI and Settings only describe what works where the app is runnin
   }, {ios: true});
 });
 
+// ---- QR code for sharing the app ----
+
+test('QR error correction matches the standard\'s worked example (HELLO WORLD, 1-M)', () => {
+  eq(qrEcc([32, 91, 11, 120, 209, 114, 220, 77, 67, 64, 236, 17, 236, 17, 236, 17], 10),
+    [196, 35, 39, 119, 235, 215, 231, 226, 93, 23]);
+});
+
+test('QR format bits match the standard\'s table for level M', () => {
+  eq([0, 1, 2, 3, 4, 5, 6, 7].map(m => qrFormatBits(m).toString(2).padStart(15, '0')), [
+    '101010000010010', '101000100100101', '101111001111100', '101101101001011',
+    '100010111111001', '100000011001110', '100111110010111', '100101010100000'
+  ]);
+});
+
+test('QR data: byte mode, length, bytes, terminator, then alternating pad bytes', () => {
+  eq(qrDataCodewords('A', 1), [0x40, 0x14, 0x10, 0xec, 0x11, 0xec, 0x11, 0xec, 0x11, 0xec, 0x11, 0xec, 0x11, 0xec, 0x11, 0xec]);
+});
+
+// Reads a symbol back the way a scanner would: format bits, unmasking, the zigzag, de-interleaving, error correction.
+function qrRead(m) {
+  let size = m.length, version = (size - 17) / 4, bits = 0;
+  for (let i = 0; i <= 5; i++) bits |= m[i][8] << i;
+  bits |= m[7][8] << 6 | m[8][8] << 7 | m[8][7] << 8;
+  for (let i = 9; i < 15; i++) bits |= m[8][14 - i] << i;
+  let second = 0;
+  for (let i = 0; i < 8; i++) second |= m[8][size - 1 - i] << i;
+  for (let i = 8; i < 15; i++) second |= m[size - 15 + i][8] << i;
+  eq(second, bits, 'both copies of the format bits agree');
+  let mask = [0, 1, 2, 3, 4, 5, 6, 7].find(k => qrFormatBits(k) === bits);
+  assert(mask !== undefined, 'format bits are level M with a valid mask');
+  let {fixed} = qrBuild(version, [], mask), stream = [];
+  for (let right = size - 1; right >= 1; right -= 2) {
+    if (right === 6) right = 5;
+    for (let vert = 0; vert < size; vert++)
+      for (let j = 0; j < 2; j++) {
+        let x = right - j, y = ((right + 1) & 2) === 0 ? size - 1 - vert : vert;
+        if (!fixed[y][x]) stream.push(m[y][x] !== QR_MASKS[mask](x, y) ? 1 : 0);
+      }
+  }
+  let words = [];
+  for (let i = 0; i + 8 <= stream.length; i += 8) words.push(stream.slice(i, i + 8).reduce((a, b) => a << 1 | b, 0));
+  let [total, eccLength, ...groups] = QR_M[version], blocks = [];
+  eq(words.length, total, 'codeword count');
+  groups.forEach(([count, size]) => {
+    for (let b = 0; b < count; b++) blocks.push({size, data: [], ecc: []});
+  });
+  let at = 0;
+  for (let i = 0; i < Math.max(...blocks.map(b => b.size)); i++) blocks.forEach(b => i < b.size && b.data.push(words[at++]));
+  for (let i = 0; i < eccLength; i++) blocks.forEach(b => b.ecc.push(words[at++]));
+  blocks.forEach((b, i) => eq(b.ecc, qrEcc(b.data, eccLength), `block ${i} error correction`));
+  let data = blocks.flatMap(b => b.data), dataBits = data.flatMap(w => [7, 6, 5, 4, 3, 2, 1, 0].map(k => (w >> k) & 1)),
+    take = n => dataBits.splice(0, n).reduce((a, b) => a << 1 | b, 0);
+  eq(take(4), 0b0100, 'byte mode');
+  let length = take(8);
+  return new TextDecoder().decode(new Uint8Array(Array.from({length}, () => take(8))));
+}
+
+test('the Share QR code is a well-formed symbol that reads back as the site address', () => {
+  let m = qrMatrix(SITE_URL);
+  eq(m.length, 33, 'version 4 for this address');
+  let finder = (x0, y0) => [0, 1, 2, 3, 4, 5, 6].map(y => [0, 1, 2, 3, 4, 5, 6].map(x => m[y0 + y][x0 + x] ? 1 : 0).join('')).join('/');
+  let pattern = '1111111/1000001/1011101/1011101/1011101/1000001/1111111';
+  eq([finder(0, 0), finder(26, 0), finder(0, 26)], [pattern, pattern, pattern], 'finder patterns');
+  eq(m[6].slice(8, 25).map(d => d ? 1 : 0).join(''), '10101010101010101', 'timing pattern');
+  eq(m[25][8], true, 'the always-dark module');
+  eq(qrRead(m), SITE_URL);
+  for (let text of ['A', 'https://claude.ai/project/0193a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b', 'Grandma’s lasagna 🍝'])
+    eq(qrRead(qrMatrix(text)), text, `round trip: ${text}`);
+});
+
+test('Settings shows the Share QR code and shares the site link', () => {
+  go('settings');
+  let svg = main().querySelector('.share-qr svg');
+  assert(svg && svg.getAttribute('aria-label') === 'QR code for ' + SITE_URL, 'QR code shown');
+  assert(main().querySelector('.share-url').textContent === SITE_URL, 'address shown');
+  [...main().querySelectorAll('.share-panel button')].find(b => b.textContent.includes('Share link')).click();
+  let [, text, title] = bridgeCalls('shareText').pop();
+  assert(text.endsWith(SITE_URL) && title === 'Share Prompt to Pan', text);
+});
+
 // ---- Report ----
 
 reset();

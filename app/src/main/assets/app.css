@@ -1159,3 +1159,23 @@ textarea.field {
     animation: none;
   }
 }
+
+/* Settings: the QR code for sharing the app. White behind it (part of the SVG) so it scans in dark mode too. */
+.share-qr {
+  width: min(220px, 70%);
+  margin: 16px auto 8px;
+  border-radius: 10px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.share-qr svg {
+  width: 100%;
+  height: auto;
+}
+
+.share-url {
+  text-align: center;
+  word-break: break-all;
+  margin: 0 0 12px;
+}

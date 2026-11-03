@@ -26,6 +26,9 @@
   .features strong { display: block; }
   .muted { color: var(--muted); }
   a { color: var(--accent); }
+  .qr { display: flex; align-items: center; gap: 16px; margin: 24px 0 0; }
+  .qr img { width: 132px; height: 132px; border-radius: 10px; flex: none; }
+  .qr p { margin: 0; }
   footer { margin-top: 40px; display: flex; flex-wrap: wrap; gap: 8px 20px; }
 </style>
 </head>
@@ -47,6 +50,12 @@
 <p class="muted"><a href="app/">Open the web app</a> · Android app coming soon to Google Play.</p>
 
 <p class="muted"><strong>On iPhone or iPad:</strong> open the web app in Safari, tap Share, then Add to Home Screen. Prompt to Pan then opens full screen like an app, and your meals stay on your phone.</p>
+
+<!-- qr.svg is made by the app's own encoder (qrSvg(SITE_URL) in app/qr.js); remake it if this page's address changes. -->
+<div class="qr">
+  <img src="qr.svg" alt="QR code for this page">
+  <p class="muted">On a computer? Scan this with your phone's camera to open this page there. Prompt to Pan's Settings has this code too, for sharing it with friends.</p>
+</div>
 
 <footer>
   <a href="privacy.html">Privacy policy</a>
