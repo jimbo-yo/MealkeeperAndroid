@@ -1799,6 +1799,78 @@ test('saved keepers are cleaned and shown as text, never markup', () => {
   assert(!hasMarkup(main()), 'the meal it joins');
 });
 
+// ---- The web version (iPhone and other browsers) ----
+
+// Runs fn as the web version: no Android bridge, and isIos() / isStandalone() answering as given.
+function asWeb(fn, {ios = false, standalone = false} = {}) {
+  let was = [window.MealkeeperAndroid, isIos, isStandalone];
+  window.MealkeeperAndroid = undefined;
+  isIos = () => ios;
+  isStandalone = () => standalone;
+  try {
+    fn();
+  } finally {
+    [window.MealkeeperAndroid, isIos, isStandalone] = was;
+  }
+}
+
+const notice = () => document.getElementById('web-notice');
+const buttonTexts = el => [...el.querySelectorAll('button')].map(b => b.textContent);
+
+test('on an iPhone in Safari the banner explains Add to Home Screen, until dismissed', () => {
+  asWeb(() => {
+    showWebNotice();
+    assert(!notice().hidden && notice().textContent.includes('Add to Home Screen'), notice().textContent);
+    notice().querySelector('button').click();
+    assert(notice().hidden, 'dismissed');
+    showWebNotice();
+    assert(notice().hidden, 'stays dismissed');
+  }, {ios: true});
+});
+
+test('the banner: Android news in other browsers, nothing once installed or in the Android app', () => {
+  asWeb(() => {
+    showWebNotice();
+    eq(notice().textContent, 'Android app coming soon to Google Play.');
+  });
+  asWeb(() => {
+    showWebNotice();
+    assert(notice().hidden, 'installed on the home screen');
+  }, {ios: true, standalone: true});
+  showWebNotice();
+  assert(notice().hidden, 'Android app');
+});
+
+test('the web version imports by Paste or from a file; the Android app gets Open a file too', () => {
+  openImport();
+  let android = buttonTexts(modal());
+  assert(android.includes('⤒ Open a file') && !android.includes('▣ Paste'), android.join(' | '));
+  asWeb(() => {
+    openImport();
+    let web = buttonTexts(modal());
+    assert(web.includes('⤒ Open a file'), web.join(' | '));
+    eq(web.includes('▣ Paste'), canPaste(), 'Paste shown where the browser can read the clipboard');
+    importPasted(sampleExport);
+  });
+  eq([meals.length, currentMeal().name], [5, 'Mediterranean chicken bowls'], 'pasted meal imported');
+});
+
+test('Plan with AI and Settings only describe what works where the app is running', () => {
+  go('ai');
+  assert(main().textContent.includes('Long-press the reply'), 'Android share step');
+  go('settings');
+  assert(main().textContent.includes('Offer to import copied meals'), 'Android clipboard setting');
+  asWeb(() => {
+    go('ai');
+    let text = main().textContent;
+    assert(text.includes('Then tap Import and Paste.') && !text.includes('Long-press the reply') && !text.includes('will offer to import'), text);
+    setMyAi('claude');
+    assert(main().querySelector('.skill-panel').textContent.includes('Open a file'), 'skill file is opened from Import');
+    go('settings');
+    assert(!main().textContent.includes('Offer to import copied meals'), 'no clipboard setting on the web');
+  }, {ios: true});
+});
+
 // ---- Report ----
 
 reset();

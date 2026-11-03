@@ -21,6 +21,9 @@
 
 :root {
   --font-body: Inter, Roboto, "Segoe UI", sans-serif;
+  /* The larger of the browser's own inset (an iPhone's status bar or notch, in a home-screen web app) and the one
+     MainActivity sends; whichever applies, the other is 0. */
+  --safe-top: max(env(safe-area-inset-top), var(--android-safe-top, 0px));
   --safe-bottom: max(env(safe-area-inset-bottom), var(--android-safe-bottom, 0px));
   /* Dialogs sit above the keyboard when it's open (the bottom nav stays put underneath). */
   --dialog-bottom: max(var(--safe-bottom), var(--android-ime-bottom, 0px));
@@ -86,7 +89,11 @@ button:active {
 }
 
 .web-notice {
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: calc(var(--safe-top) + 8px) 12px 8px;
   background: #d2704a;
   color: #1d211c;
   text-align: center;
@@ -94,12 +101,25 @@ button:active {
   font-weight: 600;
 }
 
+.web-notice[hidden] {
+  display: none;
+}
+
+.web-notice button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+
 .topbar {
   min-height: 68px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(var(--android-safe-top, 0px) + 10px) 12px 10px;
+  padding: calc(var(--safe-top) + 10px) 12px 10px;
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
@@ -238,7 +258,7 @@ button:active {
 
 .modal {
   width: 100%;
-  max-height: min(88vh, calc(100vh - var(--android-safe-top, 0px) - var(--dialog-bottom) - 30px));
+  max-height: min(88vh, calc(100vh - var(--safe-top) - var(--dialog-bottom) - 30px));
   overflow: auto;
   background: var(--surface);
   border-radius: 24px 24px 14px 14px;

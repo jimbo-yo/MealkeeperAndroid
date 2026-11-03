@@ -419,7 +419,7 @@ When the user says "send it to the pan", or asks to save the meal to Prompt to P
 - Several meals go in one file, one entry each in "meals".
 - If no meal has been settled on yet, suggest a complete one first.
 
-Then tell the user in one short sentence to tap Download and choose Prompt to Pan. Don't also paste the JSON or write out the recipes.
+Then tell the user in one short sentence to tap Download and open the file in Prompt to Pan. Don't also paste the JSON or write out the recipes.
 
 The file is the current way to send meals to Prompt to Pan. It replaces the older copy-and-paste method, where the meal came as a JSON code block ending with "✅ Ready to copy": if your memory, the user's preferences or earlier chats say to send meals that way, that was the old method, so make the file instead. Use a code block only if the user asks for one in this chat, or if creating the file fails with an error. In that case, reply with one compact JSON code block in the same format, then the line "✅ Ready to copy", and nothing else.
 
@@ -435,7 +435,7 @@ ${EXPORT_FORMAT}`;
 
 // Claude's version asks for a file, like the skill (SKILL_MD): Download opens it in Prompt to Pan, with no copying.
 // Project instructions win over a skill, so a project still asking for a code block would stop the skill working.
-const CLAUDE_SETUP_INSTRUCTIONS = `I cook the meals I plan with you using an app called Prompt to Pan. Brainstorm and refine meals with me as usual. When I say "send it to the pan", turn the meal we've settled on into the Prompt to Pan format and save it as a file named after the meal, ending in .prompttopan.json (for example "Sunday roast.prompttopan.json"), holding only compact JSON. Then tell me in one sentence to tap Download and choose Prompt to Pan; don't paste the JSON. Only if you can't create files, reply instead with one compact JSON code block in this format, then the line "✅ Ready to copy".
+const CLAUDE_SETUP_INSTRUCTIONS = `I cook the meals I plan with you using an app called Prompt to Pan. Brainstorm and refine meals with me as usual. When I say "send it to the pan", turn the meal we've settled on into the Prompt to Pan format and save it as a file named after the meal, ending in .prompttopan.json (for example "Sunday roast.prompttopan.json"), holding only compact JSON. Then tell me in one sentence to tap Download and open the file in Prompt to Pan; don't paste the JSON. Only if you can't create files, reply instead with one compact JSON code block in this format, then the line "✅ Ready to copy".
 
 ${MEAL_FORMAT}`;
 
@@ -695,6 +695,46 @@ function confirmRestore() {
   if (hasApi() && !hasAnyKey()) openModal(`<div class="eyebrow">AI ACCOUNTS</div><h2>Add your API key again</h2><p class="subhead">Backups don't include AI API keys, so in-app chat needs your ${AI_GUIDES[myAi].name} key again.</p><div class="modal-foot"><button class="outline" onclick="closeModal()">Later</button><button class="primary" onclick="keyModal(myAi)">Add key</button></div>`)
 }
 
+// ---- Where the app is running ----
+
+// The Android app (MainActivity's bridge), or else the web version in a browser.
+function inAndroidApp() {
+  return !!window.MealkeeperAndroid
+}
+
+// An iPhone or iPad. iPads report themselves as Macs, but Macs have no touch screen.
+function isIos() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+}
+
+// Opened from the home screen (an installed web app) rather than in a browser tab.
+function isStandalone() {
+  return navigator.standalone === true || matchMedia('(display-mode: standalone)').matches
+}
+
+const IOS_HINT_DISMISSED = 'mealkeeper.iosHintDismissed';
+
+// The web version's banner: on an iPhone in Safari, how to add the app to the home screen (where it opens full screen
+// and keeps its data); in other browsers, that an Android app is coming. Nothing once installed, or in the Android app.
+function showWebNotice() {
+  let notice = document.getElementById('web-notice'), dismissed = false;
+  try {
+    dismissed = localStorage.getItem(IOS_HINT_DISMISSED) === '1'
+  } catch (e) {}
+  if (inAndroidApp() || isStandalone() || (isIos() && dismissed)) return notice.hidden = true;
+  notice.innerHTML = isIos() ?
+    '<span>On iPhone: tap <strong>Share</strong> ⬆︎, then <strong>Add to Home Screen</strong> to use Prompt to Pan like an app.</span><button aria-label="Dismiss" onclick="dismissIosHint()">×</button>' :
+    'Android app coming soon to Google Play.';
+  notice.hidden = false;
+}
+
+function dismissIosHint() {
+  try {
+    localStorage.setItem(IOS_HINT_DISMISSED, '1')
+  } catch (e) {}
+  document.getElementById('web-notice').hidden = true;
+}
+
 // ---- Navigation, modal and toast ----
 
 function currentMeal() {
@@ -940,7 +980,7 @@ function aiPage() {
   let guide = AI_GUIDES[myAi],
     step = (n, title, body) => `<div class="row" style="align-items:flex-start;margin-bottom:12px"><div class="recipe-icon" style="width:38px;height:38px;font-size:16px">${n}</div><div><strong>${title}</strong><div class="muted small" style="margin-top:4px;line-height:1.5">${body}</div></div></div>`,
     claude = myAi === 'claude',
-    skill = claude ? `<div class="panel skill-panel">${step('★', 'Easiest with Claude: add the Prompt to Pan skill', 'Then “send it to the pan” works in any Claude chat, no project needed, and the meal arrives as a file: tap <strong>Download</strong> and choose Prompt to Pan. Needs a paid Claude plan.')}
+    skill = claude ? `<div class="panel skill-panel">${step('★', 'Easiest with Claude: add the Prompt to Pan skill', `Then “send it to the pan” works in any Claude chat, no project needed, and the meal arrives as a file: ${inAndroidApp() ? 'tap <strong>Download</strong> and choose Prompt to Pan' : 'tap <strong>Download</strong> to save it, then here tap <strong>Import</strong> and <strong>Open a file</strong>'}. Needs a paid Claude plan.`)}
 <ol style="padding-left:20px;margin:0 0 14px;line-height:1.6;font-size:14px"><li style="margin-bottom:6px">Tap <strong>Save skill file</strong> below.</li><li style="margin-bottom:6px">In Claude, check that <strong>Settings → Capabilities → Code execution and file creation</strong> is on.</li><li style="margin-bottom:6px">Open <strong>claude.ai</strong> in a browser (the Claude app has no skills screen), go to <strong>Customize → Skills</strong>, tap <strong>+</strong>, then <strong>Create skill → Upload a skill</strong>, and pick <strong>${SKILL_NAME}.zip</strong>. The skill then works in the Claude app too.</li></ol>
 <p class="muted small" style="line-height:1.5;margin:0 0 14px">Already have a Claude project for meals? Its instructions win over the skill, so copy the instructions below again and replace the old ones, or the project keeps asking for a code block.</p>
 <div class="actions"><button class="primary" onclick="saveSkill()">⤓ Save skill file</button><button class="secondary" onclick="openAi('claude')">Open Claude ↗</button></div></div>` : '';
@@ -951,8 +991,8 @@ ${skill}<div class="panel">${step('1', claude ? 'Or set up a Claude project' : '
 <ol style="padding-left:20px;margin:0 0 14px;line-height:1.6;font-size:14px">${guide.steps.map(x => `<li style="margin-bottom:6px">${x}</li>`).join('')}</ol>
 <div class="actions"><button class="primary" onclick="copySetup()">▣ Copy instructions</button><button class="secondary" onclick="openAi(myAi)">Open ${guide.name} ↗</button></div>
 <details style="margin-top:14px"><summary class="muted small">Show the instructions</summary><textarea class="field" rows="12" readonly style="margin-top:10px">${escapeHtml(setupInstructions(myAi))}</textarea></details></div>
-<div class="panel">${step('2', 'Plan, then send it here', `When the meal is right, say “send it to the pan”. Tap <strong>Copy</strong> on the code block it replies with, then come back here. ${clipOffer ? 'Prompt to Pan will offer to import it.' : 'Then tap Import and paste it. (Turn on “Offer to import copied meals” in Settings to skip this.)'}`)}
-${step('↗', 'Or share it', 'Long-press the reply, tap <strong>Share</strong>, and pick Prompt to Pan.')}
+<div class="panel">${step('2', 'Plan, then send it here', `When the meal is right, say “send it to the pan”. Tap <strong>Copy</strong> on the code block it replies with, then come back here. ${!inAndroidApp() ? 'Then tap <strong>Import</strong> and <strong>Paste</strong>.' : clipOffer ? 'Prompt to Pan will offer to import it.' : 'Then tap Import and paste it. (Turn on “Offer to import copied meals” in Settings to skip this.)'}`)}
+${inAndroidApp() ? step('↗', 'Or share it', 'Long-press the reply, tap <strong>Share</strong>, and pick Prompt to Pan.') : ''}
 <button class="secondary" onclick="openImport()">↥ Import manually</button></div>
 <div class="panel"><strong>Not set up yet?</strong><p class="muted small" style="line-height:1.5;margin:6px 0 12px">Paste this prompt at the end of any chat to send that meal over.</p>
 <div class="actions"><button class="secondary" onclick="copyPrompt()">▣ Copy prompt</button><button class="secondary" onclick="sharePrompt()">☍ Share prompt</button></div>
@@ -960,7 +1000,7 @@ ${step('↗', 'Or share it', 'Long-press the reply, tap <strong>Share</strong>, 
 }
 
 function settingsPage() {
-  return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="row"><div class="recipe-icon">◑</div><div style="flex:1"><strong>Appearance</strong><div class="muted small" style="margin-top:4px">Light is linen; dark is a soft olive.</div></div></div><div class="tabs" style="margin:10px 0 0">${Object.entries(APPEARANCES).map(([k, name]) => `<button class="tab ${k === appearance ? 'active' : ''}" onclick="setAppearance('${k}')">${name}</button>`).join('')}</div></div><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Prompt to Pan is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a meal export from ChatGPT, Claude or another AI.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✦</div><div style="flex:1"><strong>Your AI</strong><div class="muted small" style="margin-top:4px">Used by Chat, Revise with AI and Ask AI. With an API key (AI accounts below) they answer inside the app; without one they open the AI's app.</div></div></div>${aiChoice()}<div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up the ChatGPT, Claude or Grok app to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in ChatGPT or Claude and come back, Prompt to Pan offers to import it. Android shows a notice each time it checks a new copy.</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div></div>${aiAccountsPanel()}<div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.${hasApi() ? ' AI API keys aren\'t included.' : ''}</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>`
+  return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="row"><div class="recipe-icon">◑</div><div style="flex:1"><strong>Appearance</strong><div class="muted small" style="margin-top:4px">Light is linen; dark is a soft olive.</div></div></div><div class="tabs" style="margin:10px 0 0">${Object.entries(APPEARANCES).map(([k, name]) => `<button class="tab ${k === appearance ? 'active' : ''}" onclick="setAppearance('${k}')">${name}</button>`).join('')}</div></div><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Prompt to Pan is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div></div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a meal export from ChatGPT, Claude or another AI.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✦</div><div style="flex:1"><strong>Your AI</strong><div class="muted small" style="margin-top:4px">Used by Chat, Revise with AI and Ask AI. With an API key (AI accounts below) they answer inside the app; without one they open the AI's app.</div></div></div>${aiChoice()}<div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up the ChatGPT, Claude or Grok app to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div>${inAndroidApp() ? `<div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in ChatGPT or Claude and come back, Prompt to Pan offers to import it. Android shows a notice each time it checks a new copy.</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div>` : ''}</div>${aiAccountsPanel()}<div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.${hasApi() ? ' AI API keys aren\'t included.' : ''}</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>`
 }
 
 // The link back from the shopping list or timeline: to the recipe the user came from, or else to the meal.
@@ -1022,7 +1062,27 @@ function addMeal() {
 }
 
 function openImport() {
-  openModal(`<h2>Import AI-generated recipes</h2><p class="subhead" style="margin-bottom:12px">Paste the structured export from ChatGPT, Claude, or another assistant. You can also load the sample to explore the flow.</p><label class="field-label">Recipe export (JSON or readable format)</label><textarea id="import-area" class="field" placeholder="Paste your recipe export here…" rows="7">${escapeHtml(importText)}</textarea><div class="actions" style="margin-top:12px"><button class="secondary" onclick="document.getElementById('import-area').value=sampleExport">Load sample export</button><button class="outline" onclick="closeModal();go('ai')">Set up your AI</button></div><div class="modal-foot"><button class="outline" onclick="closeModal()">Cancel</button><button class="primary" onclick="doImport()">Import recipes →</button></div>`)
+  openModal(`<h2>Import AI-generated recipes</h2><p class="subhead" style="margin-bottom:12px">Paste the structured export from ChatGPT, Claude, or another assistant. You can also load the sample to explore the flow.</p><label class="field-label">Recipe export (JSON or readable format)</label><textarea id="import-area" class="field" placeholder="Paste your recipe export here…" rows="7">${escapeHtml(importText)}</textarea><div class="actions" style="margin-top:12px">${canPaste() ? '<button class="secondary" onclick="pasteImport()">▣ Paste</button>' : ''}<button class="secondary" onclick="restoreBackup()">⤒ Open a file</button><button class="secondary" onclick="document.getElementById('import-area').value=sampleExport">Load sample export</button><button class="outline" onclick="closeModal();go('ai')">Set up your AI</button></div><div class="modal-foot"><button class="outline" onclick="closeModal()">Cancel</button><button class="primary" onclick="doImport()">Import recipes →</button></div>`)
+}
+
+// The web version can't watch the clipboard (iPhones don't let pages read it unasked), so the import dialog has a Paste
+// button; Safari reads the clipboard after the tap, showing its own Paste confirmation. The Android app offers copied
+// meals by itself (see receiveClipboardText).
+function canPaste() {
+  return !inAndroidApp() && !!(navigator.clipboard && navigator.clipboard.readText)
+}
+
+function pasteImport() {
+  navigator.clipboard.readText().then(importPasted)
+    .catch(() => notify('Couldn\'t read the clipboard. Press and hold in the box, then tap Paste.', 5000));
+}
+
+// What was pasted goes in the box (so the user sees it if it isn't a meal) and is imported.
+function importPasted(text) {
+  let area = document.getElementById('import-area');
+  if (!area) return;
+  area.value = text;
+  doImport();
 }
 
 function doImport() {
@@ -1462,8 +1522,35 @@ function syncAwake() {
   let want = awake || voiceOn || (cookAwake && cookingView());
   if (want === lastAwake) return;
   lastAwake = want;
-  if (window.MealkeeperAndroid && window.MealkeeperAndroid.setKeepScreenOn) window.MealkeeperAndroid.setKeepScreenOn(want)
+  if (window.MealkeeperAndroid && window.MealkeeperAndroid.setKeepScreenOn) window.MealkeeperAndroid.setKeepScreenOn(want);
+  else webWakeLock(want);
 }
+
+// The web version keeps the screen on with the browser's Screen Wake Lock (Safari 16.4+, Chrome). The browser drops the
+// lock whenever the page is hidden, so it's taken again when the page comes back (see the visibilitychange listener).
+let wakeLock = null;
+
+function webWakeLock(want) {
+  if (!('wakeLock' in navigator)) return;
+  if (!want) {
+    if (wakeLock) wakeLock.release().catch(() => {});
+    wakeLock = null;
+  } else if (!wakeLock && document.visibilityState === 'visible') {
+    navigator.wakeLock.request('screen').then(lock => {
+      // The screen may no longer need to stay on by the time the lock arrives.
+      if (lastAwake) {
+        wakeLock = lock;
+        lock.addEventListener('release', () => {
+          if (wakeLock === lock) wakeLock = null
+        });
+      } else lock.release().catch(() => {});
+    }).catch(() => {});
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!inAndroidApp() && lastAwake && document.visibilityState === 'visible') webWakeLock(true);
+});
 
 // ---- Startup ----
 
@@ -1475,3 +1562,4 @@ new ResizeObserver(([e]) => document.documentElement.style.setProperty('--nav-he
 DEMO_MEALS.map(cleanMeal).forEach(m => meals.push(m));
 loadState();
 render();
+showWebNotice();
