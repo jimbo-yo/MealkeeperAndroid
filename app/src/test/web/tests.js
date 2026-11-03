@@ -1858,16 +1858,17 @@ test('saved keepers are cleaned and shown as text, never markup', () => {
 
 // ---- The web version (iPhone and other browsers) ----
 
-// Runs fn as the web version: no Android bridge, and isIos() / isStandalone() answering as given.
-function asWeb(fn, {ios = false, standalone = false} = {}) {
-  let was = [window.MealkeeperAndroid, isIos, isStandalone];
+// Runs fn as the web version: no Android bridge, and isIos() / isAndroidBrowser() / isStandalone() answering as given.
+function asWeb(fn, {ios = false, android = false, standalone = false} = {}) {
+  let was = [window.MealkeeperAndroid, isIos, isAndroidBrowser, isStandalone];
   window.MealkeeperAndroid = undefined;
   isIos = () => ios;
+  isAndroidBrowser = () => android;
   isStandalone = () => standalone;
   try {
     fn();
   } finally {
-    [window.MealkeeperAndroid, isIos, isStandalone] = was;
+    [window.MealkeeperAndroid, isIos, isAndroidBrowser, isStandalone] = was;
   }
 }
 
@@ -1884,10 +1885,14 @@ test('on an iPhone in Safari the banner explains Add to Home Screen, until dismi
   }, {ios: true});
 });
 
-test('the banner: Android news in other browsers, nothing once installed or in the Android app', () => {
+test('the banner: Android news only in Android browsers, nothing on computers, once installed or in the app', () => {
   asWeb(() => {
     showWebNotice();
-    eq(notice().textContent, 'Android app coming soon to Google Play.');
+    eq([notice().hidden, notice().textContent], [false, 'Android app coming soon to Google Play.']);
+  }, {android: true});
+  asWeb(() => {
+    showWebNotice();
+    assert(notice().hidden, 'computer');
   });
   asWeb(() => {
     showWebNotice();

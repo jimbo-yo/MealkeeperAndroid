@@ -712,6 +712,11 @@ function isIos() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 }
 
+// A browser on an Android phone or tablet (not the Prompt to Pan app itself; see inAndroidApp).
+function isAndroidBrowser() {
+  return /Android/i.test(navigator.userAgent)
+}
+
 // Opened from the home screen (an installed web app) rather than in a browser tab.
 function isStandalone() {
   return navigator.standalone === true || matchMedia('(display-mode: standalone)').matches
@@ -720,13 +725,14 @@ function isStandalone() {
 const IOS_HINT_DISMISSED = 'mealkeeper.iosHintDismissed';
 
 // The web version's banner: on an iPhone in Safari, how to add the app to the home screen (where it opens full screen
-// and keeps its data); in other browsers, that an Android app is coming. Nothing once installed, or in the Android app.
+// and keeps its data); in a browser on Android, that the Android app is coming. Nothing on computers, once installed, or
+// in the Android app.
 function showWebNotice() {
   let notice = document.getElementById('web-notice'), dismissed = false;
   try {
     dismissed = localStorage.getItem(IOS_HINT_DISMISSED) === '1'
   } catch (e) {}
-  if (inAndroidApp() || isStandalone() || (isIos() && dismissed)) return notice.hidden = true;
+  if (inAndroidApp() || isStandalone() || (isIos() ? dismissed : !isAndroidBrowser())) return notice.hidden = true;
   notice.innerHTML = isIos() ?
     '<span>On iPhone: tap <strong>Share</strong> ⬆︎, then <strong>Add to Home Screen</strong> to use Prompt to Pan like an app.</span><button aria-label="Dismiss" onclick="dismissIosHint()">×</button>' :
     'Android app coming soon to Google Play.';
