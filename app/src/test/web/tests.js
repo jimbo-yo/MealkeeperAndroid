@@ -722,7 +722,7 @@ test('a saved Claude project link lets Revise send there: copied prompt, then th
   let copied = bridgeCalls('copyText').pop()[1];
   assert(copied.includes('Make it vegetarian') && copied.includes('"mealkeeper_id":"1"'), 'prompt copied');
   eq([bridgeCalls('sendToAiApp').length, opened.length], [0, 0], 'nothing opened before the steps are read');
-  assert(modal().textContent.includes('Start a new chat there'), modal().textContent);
+  assert(modal().textContent.includes('Tap its message box to start a chat there'), modal().textContent);
   [...modal().querySelectorAll('button')].find(b => b.textContent === 'Open project ↗').click();
   eq([opened, modalOpen()], [[LINK], false]);
 

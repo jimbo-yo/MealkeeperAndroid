@@ -1419,7 +1419,7 @@ function sendToProject() {
   pendingAsk = null;
   pendingProjectAfter = after;
   copyText(prompt, 'Prompt copied');
-  openModal(`<div class="eyebrow">CLAUDE PROJECT</div><h2>Prompt copied</h2><p class="subhead">Claude opens on your project. Start a new chat there, then press and hold in the message box and tap <strong>Paste</strong>.</p><div class="modal-foot"><button class="outline" onclick="pendingProjectAfter=null;closeModal()">Cancel</button><button class="primary" onclick="openClaudeProject()">Open project ↗</button></div>`, true);
+  openModal(`<div class="eyebrow">CLAUDE PROJECT</div><h2>Prompt copied</h2><p class="subhead">Claude opens on your project. Tap its message box to start a chat there, then paste from your keyboard: the copied text shows above the keys for a minute after copying, or open the keyboard\'s clipboard (in Gboard, tap ⊞ and then <strong>Clipboard</strong>). Long-pressing the box may start voice input instead.</p><div class="modal-foot"><button class="outline" onclick="pendingProjectAfter=null;closeModal()">Cancel</button><button class="primary" onclick="openClaudeProject()">Open project ↗</button></div>`, true);
 }
 
 function openClaudeProject() {
