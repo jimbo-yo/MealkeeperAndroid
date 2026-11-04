@@ -47,6 +47,9 @@ window.MealkeeperAndroid = {
   setClipboardWatch(enabled) {
     this.calls.push(['setClipboardWatch', enabled]);
   },
+  sendFeedback(url, body) {
+    this.calls.push(['sendFeedback', url, body]);
+  },
   // API keys: which AIs have one (tests set this; the keys themselves aren't kept).
   keys: {},
   aiKeys() {

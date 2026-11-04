@@ -73,6 +73,23 @@ API use is billed by the AI provider to your own account (an app subscription su
 
 **Government app / financial features / health:** No.
 
+**Data safety, from 1.2 (feedback):** Settings → Send feedback posts what the user writes to the developer's Google Form, so add to the answers above:
+- Data type: **App activity → Other user-generated content** (the message). Collected: yes. Shared: no. Optional. Purpose: **Developer communications**.
+- Data types: **Personal info → Name** and **Personal info → Email address**, only if the user types them in. Collected: yes. Shared: no. Optional. Purpose: **Developer communications**.
+- Deletion: the user can email prompttopan.support@gmail.com to have a message removed from the sheet; the privacy policy says so.
+
+## Release notes for 1.2
+
+Paste into the release's notes box as-is (500 characters max; the tags set the language):
+
+<en-US>
+New in Prompt to Pan 1.2:
+• Send feedback from Settings: ideas, problems, anything (anonymous unless you add your name or email)
+• Claude can send meals as a file with the Prompt to Pan skill, and Revise with AI can go to your Claude project
+• Share Prompt to Pan with a link or QR code
+• Fixes for crashes and lost data
+</en-US>
+
 ## Release notes for 1.1
 
 Paste into the release's notes box as-is (500 characters max; the tags set the language):

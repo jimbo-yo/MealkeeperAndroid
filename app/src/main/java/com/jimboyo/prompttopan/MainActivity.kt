@@ -62,6 +62,7 @@ class MainActivity : Activity() {
     private val io = Executors.newSingleThreadExecutor()
     private val aiApi by lazy { AiApi(this) { script -> mainHandler.post { runJs(script) } } }
     private val voice by lazy { Voice(this) { script -> mainHandler.post { runJs(script) } } }
+    private val feedback by lazy { Feedback { script -> mainHandler.post { runJs(script) } } }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -587,6 +588,9 @@ class MainActivity : Activity() {
                 .putExtra(AlarmClock.EXTRA_SKIP_UI, false)
         )
 
+        @JavascriptInterface
+        fun sendFeedback(url: String, body: String) = feedback.send(url, body)
+
         // subject, if any, becomes an email's subject line.
         @JavascriptInterface
         fun shareText(text: String, title: String, subject: String) {
@@ -632,6 +636,7 @@ class MainActivity : Activity() {
         mainHandler.removeCallbacksAndMessages(null)
         io.shutdown()
         aiApi.cancelAll()
+        feedback.shutdown()
         if (voiceUsed) voice.release()
         if (::webView.isInitialized) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

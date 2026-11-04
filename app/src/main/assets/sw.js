@@ -1,4 +1,4 @@
-const CACHE = 'prompt-to-pan-web-v3';
+const CACHE = 'prompt-to-pan-web-v4';
 const FILES = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const FILES = [
   './chat.js',
   './keepers.js',
   './qr.js',
+  './feedback.js',
   './demo-data.js',
   './manifest.webmanifest',
   './fonts/SpaceMono-Bold.woff2',
