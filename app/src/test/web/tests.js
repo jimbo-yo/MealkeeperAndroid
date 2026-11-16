@@ -56,6 +56,9 @@ function reset() {
   keepers.length = 0;
   mealsTab = 'meals';
   keeperQuery = '';
+  feedbackDraft = {message: '', name: '', email: ''};
+  feedbackSending = false;
+  FEEDBACK_FORM.url = '';
   render();
   bridge.calls.length = 0;
 }
@@ -1681,6 +1684,68 @@ test('saved keepers are cleaned and shown as text, never markup', () => {
   assert(!hasMarkup(modal()), modal().innerHTML);
   addKeeperToMeal(5, null);
   assert(!hasMarkup(main()), 'the meal it joins');
+});
+
+// ---- Feedback ----
+
+const TEST_FORM = 'https://docs.google.com/forms/d/e/test/formResponse';
+
+function writeFeedback(message, name = '', email = '') {
+  Object.assign(FEEDBACK_FORM, {url: TEST_FORM, message: 'entry.1', name: 'entry.2', email: 'entry.3'});
+  go('settings');
+  openFeedback();
+  Object.assign(feedbackDraft, {message, name, email});
+  sendFeedback();
+}
+
+test('Settings offers feedback only once the form is set up', () => {
+  go('settings');
+  assert(!main().textContent.includes('Send feedback'), 'no form URL yet');
+  FEEDBACK_FORM.url = TEST_FORM;
+  render();
+  assert(main().textContent.includes('Send feedback'));
+});
+
+test('anonymous feedback sends just the message', () => {
+  writeFeedback('  Love it  ');
+  let call = bridge.calls.find(c => c[0] === 'sendFeedback');
+  assert(call, 'sent through the bridge');
+  eq(call[1], TEST_FORM);
+  let body = new URLSearchParams(call[2]);
+  eq([body.get(FEEDBACK_FORM.message), body.get(FEEDBACK_FORM.name), body.get(FEEDBACK_FORM.email)], ['Love it', '', '']);
+  window.onFeedbackSent(true);
+  eq(feedbackDraft.message, '', 'the draft is cleared');
+  assert(document.getElementById('modal-bg').style.display === 'none', 'the dialog closes');
+});
+
+test('feedback can include a name and email', () => {
+  writeFeedback('Hi', 'Sam', 'sam@example.com');
+  let body = new URLSearchParams(bridge.calls.find(c => c[0] === 'sendFeedback')[2]);
+  eq([body.get('entry.2'), body.get('entry.3')], ['Sam', 'sam@example.com']);
+});
+
+test('empty feedback or a bad email is not sent', () => {
+  writeFeedback('   ');
+  writeFeedback('Hi', '', 'not an email');
+  assert(!bridge.calls.some(c => c[0] === 'sendFeedback'));
+});
+
+test('a failed send keeps the draft to try again', () => {
+  writeFeedback('Broken timer');
+  window.onFeedbackSent(false);
+  eq(feedbackDraft.message, 'Broken timer');
+  assert(modal().textContent.includes('Send →'), modal().textContent);
+  bridge.calls.length = 0;
+  sendFeedback();
+  assert(bridge.calls.some(c => c[0] === 'sendFeedback'), 'can send again');
+});
+
+test('the feedback draft is shown as text, never markup', () => {
+  FEEDBACK_FORM.url = TEST_FORM;
+  feedbackDraft = {message: '<b>m</b>', name: '"><img src=x>', email: ''};
+  openFeedback();
+  assert(!hasMarkup(modal()), modal().innerHTML);
+  eq(document.getElementById('feedback-name').value, '"><img src=x>');
 });
 
 // ---- Report ----
