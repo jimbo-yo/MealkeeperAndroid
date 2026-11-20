@@ -935,11 +935,12 @@ function showRecipe(i) {
 
 // A recipe's details, shared by the recipe screen and the keeper screen (keepers.js). factor scales the amounts.
 function recipeBody(r, factor = 1) {
+  let scaledServings = r.servings > 0 ? Math.round(r.servings * factor) : 0;
   let facts = [
     ['Prep', fmtMinutes(r.prep)],
     ['Cook', fmtMinutes(r.cook)],
     ['Total', r.time],
-    ['Serves', str(r.servings || '')]
+    ['Serves', str(scaledServings || '')]
   ].filter(f => f[1]);
   return `${r.course?`<p class="subhead" style="margin-bottom:10px">${escapeHtml(r.course)}</p>`:''}${facts.length?`<div class="muted small" style="margin-bottom:14px">${facts.map(f=>`${f[0]}: <strong>${escapeHtml(f[1])}</strong>`).join(' &nbsp;·&nbsp; ')}</div>`:''}${r.ingredients.length?`<div class="panel"><strong>Ingredients</strong>${r.ingredients.map(x=>`<div class="checkrow"><span>${escapeHtml(x.name)}${x.notes?` <span class="muted small">(${escapeHtml(x.notes)})</span>`:''}</span><span class="qty">${escapeHtml(scaledQty(x.quantity,x.unit,factor))}</span></div>`).join('')}</div>`:''}${r.instructions.length?`<div class="panel"><strong>Instructions</strong><ol style="padding-left:20px;margin:10px 0 0;line-height:1.6;font-size:16px">${r.instructions.map(s=>`<li style="margin-bottom:8px">${escapeHtml(s)}</li>`).join('')}</ol></div>`:''}${r.ingredients.length||r.instructions.length?'':`<div class="panel"><p class="muted small" style="line-height:1.6;margin:0">No ingredients or steps are saved for this recipe. Send the meal from ChatGPT or Claude to get the full recipe.</p></div>`}${r.makeAhead?`<div class="panel"><strong>Make ahead</strong><p class="muted small" style="line-height:1.6;margin-bottom:0">${escapeHtml(r.makeAhead)}</p></div>`:''}${r.source?`<p class="muted small">Source: ${escapeHtml(r.source)}</p>`:''}`
 }
@@ -1603,7 +1604,7 @@ function cookingView() {
 }
 
 function syncAwake() {
-  let want = awake || voiceOn || (cookAwake && cookingView());
+  let want = awake || voiceOn || cookVoice !== 'off' || (cookAwake && cookingView());
   if (want === lastAwake) return;
   lastAwake = want;
   if (window.MealkeeperAndroid && window.MealkeeperAndroid.setKeepScreenOn) window.MealkeeperAndroid.setKeepScreenOn(want);

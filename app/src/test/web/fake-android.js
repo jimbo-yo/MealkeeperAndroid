@@ -22,6 +22,11 @@ window.MealkeeperAndroid = {
     this.calls.push(['setAlarm', hour, minutes, label]);
     return this.alarmResult;
   },
+  timerResult: true,
+  setTimer(seconds, label) {
+    this.calls.push(['setTimer', seconds, label]);
+    return this.timerResult;
+  },
   // What sendToAiApp reports: 'shared', 'opened' or 'missing' (tests set this).
   aiAppResult: 'shared',
   sendToAiApp(ai, text) {

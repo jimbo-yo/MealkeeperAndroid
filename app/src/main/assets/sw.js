@@ -1,4 +1,4 @@
-const CACHE = 'prompt-to-pan-web-v4';
+const CACHE = 'prompt-to-pan-web-v5';
 const FILES = [
   './',
   './index.html',

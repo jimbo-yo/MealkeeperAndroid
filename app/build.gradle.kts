@@ -61,6 +61,13 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    sourceSets {
+        getByName("main") {
+            // Keep the Android-only Vosk model outside src/main/assets so web builds and web tests never copy it.
+            assets.directories.add("vosk-assets")
+        }
+    }
 }
 
 dependencies {
@@ -68,32 +75,41 @@ dependencies {
     implementation("com.alphacephei:vosk-android:0.3.75")
 }
 
-// Cook mode's offline speech model (about 41 MB, Apache 2.0), downloaded on the first build into assets rather than
-// kept in git; see .gitignore.
-val voskModelDir = file("src/main/assets/model-en-us")
+// Cook mode's offline speech model (about 41 MB zip, Apache 2.0), downloaded on the first build into app/vosk-assets
+// rather than src/main/assets or git; see .gitignore.
+val voskAssetsDir = file("vosk-assets")
+val voskModelDir = file("vosk-assets/model-en-us")
 val downloadVoskModel = tasks.register("downloadVoskModel") {
     val out = voskModelDir
+    val staging = File(voskAssetsDir, "model-en-us.tmp")
     outputs.dir(out)
     onlyIf { !File(out, "uuid").exists() }
     doLast {
         val url = URI("https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip").toURL()
-        val root = out.canonicalFile
-        out.deleteRecursively()
-        out.mkdirs()
-        ZipInputStream(url.openStream().buffered()).use { zip ->
-            var entry = zip.nextEntry
-            while (entry != null) {
-                val relative = entry.name.substringAfter('/')   // drop the zip's top-level folder
-                if (relative.isNotEmpty()) {
-                    val target = File(out, relative).canonicalFile
-                    require(target.path.startsWith(root.path)) { "Unexpected path in model zip: ${entry.name}" }
-                    if (entry.isDirectory) target.mkdirs()
-                    else { target.parentFile.mkdirs(); target.outputStream().use { zip.copyTo(it) } }
+        staging.deleteRecursively()
+        staging.mkdirs()
+        val stagingRoot = staging.canonicalFile.toPath()
+        try {
+            ZipInputStream(url.openStream().buffered()).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    val relative = entry.name.substringAfter('/')   // drop the zip's top-level folder
+                    if (relative.isNotEmpty()) {
+                        val target = File(staging, relative).canonicalFile
+                        require(target.toPath().startsWith(stagingRoot)) { "Unexpected path in model zip: ${entry.name}" }
+                        if (entry.isDirectory) target.mkdirs()
+                        else { target.parentFile.mkdirs(); target.outputStream().use { zip.copyTo(it) } }
+                    }
+                    entry = zip.nextEntry
                 }
-                entry = zip.nextEntry
             }
+            File(staging, "uuid").writeText("vosk-model-small-en-us-0.15\n")
+            out.deleteRecursively()
+            check(staging.renameTo(out)) { "Failed to move unpacked Vosk model into $out" }
+        } catch (e: Exception) {
+            staging.deleteRecursively()
+            throw e
         }
-        File(out, "uuid").writeText("vosk-model-small-en-us-0.15\n")
     }
 }
 tasks.named("preBuild") { dependsOn(downloadVoskModel) }

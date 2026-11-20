@@ -29,6 +29,7 @@ if ! command -v firefox >/dev/null; then
 fi
 
 cp -r "$ROOT"/app/src/main/assets/. "$WORK"/
+rm -rf "$WORK/model-en-us"
 cp "$ROOT"/app/src/test/web/*.js "$WORK"/
 # The test page is the real index.html with the fake Android bridge before the app and the tests after it.
 sed -e 's#<script src="demo-data.js"></script>#<script src="fake-android.js"></script>&#' \

@@ -2183,6 +2183,106 @@ test('a refused microphone explains itself and turns voice off', () => {
   eq(cookEl().querySelector('.cook-voice').textContent, 'Voice');
 });
 
+test('scaling keeps small amounts above zero, pluralizes units, and updates Serves', () => {
+  eq([scaledQty(0.125, 'tsp', 0.25), scaledQty(1, 'clove', 2), scaledQty(3, 'cloves', 1 / 3),
+      scaledQty(1, 'cup', 1.5), scaledQty(2, 'cups', 0.25)],
+    ['0.03 tsp', '2 cloves', '1 clove', '1 ½ cups', '½ cup']);
+  openMeal(1);
+  showRecipe(1);
+  modal().querySelectorAll('.servings-bar button')[1].click();
+  assert(modal().textContent.includes('Serves: 4'), 'recipe facts reflect scaled servings: ' + modal().textContent);
+});
+
+test('ingredient matching handles -es/-ies singulars, longest overlap, and skips duplicate quantities', () => {
+  let r = {
+    ingredients: [
+      {name: 'Red wine', quantity: 0.5, unit: 'cup'},
+      {name: 'Red wine vinegar', quantity: 2, unit: 'tbsp'},
+      {name: 'Cherry tomatoes', quantity: 1, unit: 'pint'},
+      {name: 'Fresh berries', quantity: 1, unit: 'cup'},
+      {name: 'Olive oil', quantity: 2, unit: 'tbsp'},
+      {name: 'Italian sausage links', quantity: 1, unit: 'lb'},
+      {name: 'Salt', quantity: 'a pinch', unit: ''}
+    ],
+    instructions: [
+      'Whisk red wine vinegar with each tomato and berry.',
+      'Add 2 tbsp olive oil, a pinch of salt, and Italian seasoning.'
+    ]
+  };
+  eq(stepIngredients(r, 0).map(x => x.name), ['Red wine vinegar', 'Cherry tomatoes', 'Fresh berries']);
+  let html0 = markedStep(r, 0, 1);
+  assert(html0.includes('<mark><b>2 tbsp</b> red wine vinegar</mark>'), html0);
+  assert(html0.includes('<mark><b>1 pint</b> tomato</mark>'), html0);
+  assert(html0.includes('<mark><b>1 cup</b> berry</mark>'), html0);
+  let html1 = markedStep(r, 1, 1);
+  assert(html1.includes('2 tbsp <mark>olive oil</mark>'), 'no doubled tbsp: ' + html1);
+  assert(html1.includes('a pinch of <mark>salt</mark>'), 'no doubled pinch: ' + html1);
+  assert(!html1.includes('1 lb'), 'vague "Italian" does not match sausage: ' + html1);
+});
+
+test('spoken amounts and steps use natural grammar, temperatures and ranges', () => {
+  eq([spokenAmount(0.5, 'oz', 1), spokenAmount(0.25, 'oz.', 1), spokenAmount(1.5, 'cup', 1),
+      spokenAmount(1, 'cloves', 1), spokenAmount(2, 'bunch', 1), spokenAmount(1, 'tbsp.', 2)],
+    ['half an ounce', 'a quarter of an ounce', '1 and a half cups', '1 clove', '2 bunches', '2 tablespoons']);
+  let r = {
+    servings: 2,
+    ingredients: [{name: 'Olive oil', quantity: 2, unit: 'tbsp'}],
+    instructions: ['Bake at 350 °F (180°C) for 6–7 minutes after adding 2 tbsp olive oil.']
+  };
+  eq(spokenStep({id: 99}, r, 0), 'Step 1. Bake at 350 degrees (180 degrees Celsius) for 6 to 7 minutes after adding 2 tbsp olive oil.');
+});
+
+test('"ingredients" reads this step\'s ingredients aloud, "next" exits when done, and voice keeps screen awake', () => {
+  setCookAwake(false);
+  cookWithVoice();
+  eq(lastAwakeCall(), true, 'screen stays on while Cook Voice is active even when cookAwake is off');
+  cookStep(1); // Step 2: peppers and garlic
+  window.onCookVoice('heard', 'ingredients');
+  assert(spoken().pop().includes('For step 2: 2 Bell peppers, sliced. 3 cloves Garlic, minced.'), spoken().join(' | '));
+  cookGoTo(5); // All steps done
+  window.onCookVoice('heard', 'next');
+  eq(cookEl().hidden, true, '"next" on All steps done exits Cook mode');
+});
+
+test('inline step timers parse durations, persist across steps, respond to voice, and hand off to Clock', () => {
+  eq(stepTimers('Cook 6–7 minutes, then bake 1 hour 15 minutes and whisk 30 seconds.'),
+    [{seconds: 360, label: '6–7 min'}, {seconds: 4500, label: '1 hr 15 min'}, {seconds: 30, label: '30 sec'}]);
+  cookWithVoice();
+  cookStep(1); // Step 2: "...about 8 minutes."
+  assert(cookEl().querySelector('.cook-timer-start').textContent.includes('8 min'), 'timer pill shown');
+  cookEl().querySelector('.cook-timer-clock').click();
+  eq(bridgeCalls('setTimer').pop()[1], 480, 'Clock handoff passes seconds');
+  window.onCookVoice('heard', 'start the timer');
+  eq(cook.timers.length, 1, 'voice started timer');
+  assert(spoken().pop().includes('Timer set for 8 minutes'), 'voice confirmed timer');
+  cookStep(1); // Move to Step 3: timer stays visible
+  assert(cookEl().querySelector('.cook-timer-chip'), 'timer persists across steps');
+  let id = cook.timers[0].id;
+  toggleCookTimer(id);
+  eq(cook.timers[0].paused, true, 'paused');
+  bumpCookTimer(id, 60);
+  assert(cook.timers[0].remainingMs > 480000, '+1m added');
+  cook.timers[0].done = true;
+  window.onCookVoice('heard', 'timer');
+  eq(cook.timers.length, 0, 'voice "timer" dismisses ringing timer');
+});
+
+test('progress segments jump directly to steps and keepers support scaling and Cook mode', () => {
+  openMeal(1);
+  openCook(1);
+  cookEl().querySelectorAll('.cook-seg')[3].click();
+  assert(cookEl().textContent.includes('Step 4 of 5'), 'jumped to step 4');
+  closeCook();
+  keepRecipe(1);
+  let k = keepers[0];
+  showKeeper(k.id);
+  assert(document.getElementById('modal-bg').classList.contains('full'), 'keeper opens full screen');
+  modal().querySelectorAll('.servings-bar button')[1].click();
+  assert(modal().textContent.includes('16 oz'), 'keeper ingredients scale');
+  modal().querySelector('.cook-start').click();
+  assert(!cookEl().hidden && cookEl().textContent.includes('Serves 4'), 'keeper opens in Cook mode with chosen servings');
+});
+
 // ---- Report ----
 
 reset();

@@ -64,6 +64,7 @@ class MainActivity : Activity() {
     private val voice by lazy { Voice(this) { script -> mainHandler.post { runJs(script) } } }
     private val cookVoice by lazy { CookVoice(this) { script -> mainHandler.post { runJs(script) } } }
     private var cookVoiceUsed = false
+    private var cookVoicePendingPermission = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -164,7 +165,7 @@ class MainActivity : Activity() {
         webView.loadUrl("file:///android_asset/index.html")
     }
 
-    // The mic and read-aloud replies are only for while the chat is on screen.
+    // The mic and read-aloud replies (chat and Cook mode) are only for while the app is on screen.
     override fun onPause() {
         super.onPause()
         if (voiceUsed && !askingForMic) voice.stop(tellPage = true)
@@ -175,6 +176,9 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_COOK_MICROPHONE) {
             askingForMic = false
+            val stillWanted = cookVoicePendingPermission
+            cookVoicePendingPermission = false
+            if (!stillWanted) return
             if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) cookVoice.start()
             else runJs("window.onCookVoice&&window.onCookVoice('error','denied')")
             return
@@ -564,6 +568,7 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun voiceListen() {
             runOnUiThread {
+                if (cookVoiceUsed) cookVoice.stop(tellPage = true)
                 voiceUsed = true
                 if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) voice.listen()
                 else {
@@ -587,20 +592,27 @@ class MainActivity : Activity() {
 
         // Hands-free Cook mode; see CookVoice and the voice section of cook.js. The first start asks for the microphone.
         @JavascriptInterface
-        fun cookVoiceAvailable(): Boolean = cookVoice.available
+        fun cookVoiceAvailable(): Boolean = CookVoice.isModelAvailable(this@MainActivity)
 
         @JavascriptInterface
         fun cookVoiceStart() = runOnUiThread {
+            if (voiceUsed) voice.stop(tellPage = true)
             cookVoiceUsed = true
-            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) cookVoice.start()
-            else {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                cookVoicePendingPermission = false
+                cookVoice.start()
+            } else {
+                cookVoicePendingPermission = true
                 askingForMic = true
                 requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_COOK_MICROPHONE)
             }
         }
 
         @JavascriptInterface
-        fun cookVoiceStop() = runOnUiThread { if (cookVoiceUsed) cookVoice.stop(tellPage = false) }
+        fun cookVoiceStop() = runOnUiThread {
+            cookVoicePendingPermission = false
+            if (cookVoiceUsed) cookVoice.stop(tellPage = false)
+        }
 
         @JavascriptInterface
         fun cookVoiceSpeak(text: String) = runOnUiThread { if (cookVoiceUsed) cookVoice.speak(text) }
@@ -615,6 +627,15 @@ class MainActivity : Activity() {
             Intent(AlarmClock.ACTION_SET_ALARM)
                 .putExtra(AlarmClock.EXTRA_HOUR, hour)
                 .putExtra(AlarmClock.EXTRA_MINUTES, minutes)
+                .putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                .putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+        )
+
+        // Opens the Clock app with a countdown timer pre-filled (used from Cook mode when the user prefers a system timer).
+        @JavascriptInterface
+        fun setTimer(seconds: Int, label: String): Boolean = startOther(
+            Intent(AlarmClock.ACTION_SET_TIMER)
+                .putExtra(AlarmClock.EXTRA_LENGTH, seconds.coerceAtLeast(1))
                 .putExtra(AlarmClock.EXTRA_MESSAGE, label)
                 .putExtra(AlarmClock.EXTRA_SKIP_UI, false)
         )

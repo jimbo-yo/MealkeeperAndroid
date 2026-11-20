@@ -1357,21 +1357,32 @@ html.cooking body {
 .cook-progress {
   display: flex;
   gap: 5px;
-  padding: 0 16px;
+  padding: 2px 16px;
 }
 
-.cook-progress i {
+.cook-seg {
   flex: 1;
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.cook-seg i {
+  display: block;
+  width: 100%;
   height: 8px;
   border-radius: 4px;
   background: var(--track);
 }
 
-.cook-progress i.done {
+.cook-seg i.done {
   background: #496548;
 }
 
-.cook-progress i.now {
+.cook-seg i.now {
   background: #e3b341;
 }
 
@@ -1557,7 +1568,90 @@ html.cooking body {
 
 @media (prefers-reduced-motion: reduce) {
   .cook .flash,
-  .cook-voice-status {
+  .cook-voice-status,
+  .cook-timer-chip.done {
     transition: none;
+    animation: none;
   }
+}
+
+/* ---- Cook mode timers ---- */
+
+.cook-timers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+
+.cook-timer-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: light-dark(#efe6d4, #30392d);
+  border: 1px solid var(--line);
+}
+
+.cook-timer-chip.paused {
+  opacity: .78;
+}
+
+.cook-timer-chip.done {
+  background: light-dark(#f3d27a, #6a5524);
+  color: light-dark(#1d211c, #f6ecd2);
+  border-color: #d2704a;
+  animation: timer-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes timer-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(210, 112, 74, .45); }
+  50% { box-shadow: 0 0 0 6px rgba(210, 112, 74, 0); }
+}
+
+.cook-timer-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cook-timer-time {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cook-timer-btn {
+  min-height: 36px;
+  padding: 4px 10px;
+  font-size: 14px;
+}
+
+.cook-step-timers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.cook-timer-offer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cook-timer-start {
+  min-height: 48px;
+  font-size: 17px;
+  padding: 10px 16px;
+}
+
+.cook-timer-clock {
+  min-height: 48px;
+  font-size: 15px;
+  padding: 10px 12px;
 }
