@@ -35,6 +35,9 @@
       <button data-page="settings" onclick="go('settings')"><span>⚙</span>Settings</button>
     </nav>
 
+    <!-- Cook mode (cook.js): one step at a time, over everything else. -->
+    <div class="cook" id="cook" hidden></div>
+
     <div class="toast" id="toast"></div>
     <div class="modal-bg" id="modal-bg" onclick="if(event.target===this)closeModal()">
       <div class="modal" id="modal"></div>
@@ -44,6 +47,7 @@
   <script src="demo-data.js"></script>
   <script src="chat.js"></script>
   <script src="keepers.js"></script>
+  <script src="cook.js"></script>
   <script src="qr.js"></script>
   <script src="app.js"></script>
   <script>if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});</script>

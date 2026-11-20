@@ -21,6 +21,7 @@ android {
         versionCode = 3
         // Raise versionCode for every upload to Play; versionName is what the store shows.
         versionName = "1.1"
+        manifestPlaceholders["appLabel"] = "Prompt to Pan"
     }
 
     signingConfigs {
@@ -35,6 +36,13 @@ android {
     }
 
     buildTypes {
+        // Test builds install beside the Play version (their own app ID, name and data), so trying one never needs
+        // the real app uninstalled: back up meals there and restore them here.
+        getByName("debug") {
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
+            manifestPlaceholders["appLabel"] = "Prompt to Pan (test)"
+        }
         release {
             // Without keystore.properties, release builds come out unsigned.
             signingConfig = signingConfigs.findByName("upload")

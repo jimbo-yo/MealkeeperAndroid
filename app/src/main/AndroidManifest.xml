@@ -26,7 +26,7 @@
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:label="Prompt to Pan"
+        android:label="${appLabel}"
         android:theme="@style/Theme.Mealkeeper"
         android:usesCleartextTraffic="false">
         <activity

@@ -1,4 +1,4 @@
-const CACHE = 'prompt-to-pan-web-v3';
+const CACHE = 'prompt-to-pan-web-v4';
 const FILES = [
   './',
   './index.html',
@@ -6,11 +6,14 @@ const FILES = [
   './app.js',
   './chat.js',
   './keepers.js',
+  './cook.js',
   './qr.js',
   './demo-data.js',
   './manifest.webmanifest',
   './fonts/SpaceMono-Bold.woff2',
-  './fonts/Satisfy-Regular.woff2'
+  './fonts/Satisfy-Regular.woff2',
+  './fonts/AtkinsonHyperlegible-Regular.ttf',
+  './fonts/AtkinsonHyperlegible-Bold.ttf'
 ];
 
 self.addEventListener('install', event => {

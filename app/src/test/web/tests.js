@@ -2020,6 +2020,78 @@ test('Settings shows the Share QR code and shares the site link', () => {
   assert(text.endsWith(SITE_URL) && title === 'Share Prompt to Pan', text);
 });
 
+// ---- Recipe screen and Cook mode (cook.js) ----
+
+test('scaled amounts are written as kitchen fractions; text amounts stay as given', () => {
+  eq([scaledQty(1, 'tbsp', 1.5), scaledQty(0.5, 'cup', 2 / 3), scaledQty(2, 'cloves', 1.5), scaledQty(12, 'oz', 4 / 3),
+      scaledQty('a pinch', '', 2), scaledQty(1.2, 'kg', 1), scaledQty(1, '', 1.45), scaledQty(1, '', 1.37)],
+    ['1 ½ tbsp', '⅓ cup', '3 cloves', '16 oz', 'a pinch', '1.2 kg', '1.45', '1 ⅜']);
+});
+
+test('a step finds the ingredients it mentions, including by a distinctive word', () => {
+  let r = meals[0].recipes[1];
+  eq(r.instructions.map((_, i) => stepIngredients(r, i).map(x => x.name)), [
+    ['Italian sausage links', 'Olive oil'],
+    ['Bell peppers', 'Garlic'],
+    ['Heavy cream', 'Rigatoni pasta'],
+    ['Rigatoni pasta'],
+    ['Rigatoni pasta', 'Parmesan']
+  ]);
+});
+
+test('a step shows each amount in front of its ingredient, as text', () => {
+  let r = meals[0].recipes[1];
+  let html = markedStep(r, 0, 1);
+  assert(html.includes('<mark><b>1 lb</b> sausage</mark>'), html);
+  assert(html.includes('<mark><b>1 tbsp</b> olive oil</mark>'), html);
+  let evil = {ingredients: [{name: '<b>x</b>', quantity: 1, unit: ''}], instructions: ['Add <b>x</b> & stir']};
+  assert(!markedStep(evil, 0, 1).includes('<b>x</b>'), 'step text is escaped');
+});
+
+test('the recipe screen fills the screen, scales with servings and offers Start cooking', () => {
+  openMeal(1);
+  showRecipe(1);
+  assert(document.getElementById('modal-bg').classList.contains('full'), 'full screen');
+  let bar = modal().querySelector('.servings-bar');
+  eq(bar.querySelector('b').textContent, '3');
+  bar.querySelectorAll('button')[1].click();
+  bar = modal().querySelector('.servings-bar');
+  eq(bar.querySelector('b').textContent, '4');
+  assert(modal().textContent.includes('16 oz'), 'rigatoni scaled from 12 oz: ' + modal().textContent);
+  assert(modal().querySelector('.cook-start'), 'Start cooking');
+  closeModal();
+  openImport();
+  assert(!document.getElementById('modal-bg').classList.contains('full'), 'other dialogs are not full screen');
+});
+
+test('Cook mode goes through the steps and Back closes the ingredients list before leaving', () => {
+  openMeal(1);
+  showRecipe(1);
+  modal().querySelector('.cook-start').click();
+  let cookEl = document.getElementById('cook');
+  assert(!cookEl.hidden && cookEl.textContent.includes('Step 1 of 5'), cookEl.textContent);
+  eq(lastAwakeCall(), true, 'screen stays on');
+  [...cookEl.querySelectorAll('.cook-foot button')].pop().click();
+  assert(cookEl.textContent.includes('Step 2 of 5'));
+  assert(cookEl.querySelector('.cook-step mark'), 'amounts in the step');
+  cookEl.querySelector('.cook-show').click();
+  assert(cookEl.querySelector('.cook-sheet').textContent.includes('For step 2'), 'step ingredients first');
+  cookEl.querySelector('.cook-ing.large').click();
+  assert(cookEl.querySelector('.cook-ing.large.got'), 'ticked off');
+  eq([handleBack(), !!cookEl.querySelector('.cook-sheet'), !cookEl.hidden], [true, false, true], 'Back closes the list first');
+  eq([handleBack(), cookEl.hidden, modalOpen()], [true, true, true], 'then leaves Cook mode, back on the recipe');
+});
+
+test('Cook mode finishes with a way back to the recipe', () => {
+  openMeal(1);
+  openCook(0);
+  for (let k = 0; k < 3; k++) cookStep(1);
+  let cookEl = document.getElementById('cook');
+  assert(cookEl.textContent.includes('All steps done'), cookEl.textContent);
+  [...cookEl.querySelectorAll('.cook-foot button')].pop().click();
+  eq(cookEl.hidden, true);
+});
+
 // ---- Report ----
 
 reset();
