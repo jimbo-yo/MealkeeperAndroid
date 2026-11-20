@@ -60,6 +60,10 @@ function reset() {
   canTalk = null;
   bridge.voice = false;
   keepers.length = 0;
+  closeCook();
+  readSteps = false;
+  Object.keys(chosenServings).forEach(k => delete chosenServings[k]);
+  bridge.cookVoice = false;
   mealsTab = 'meals';
   keeperQuery = '';
   render();
@@ -532,7 +536,7 @@ test('export sends the backup to Android', () => {
   assert(call, 'bridge not called');
   assert(/^prompt-to-pan-backup-\d{4}-\d{2}-\d{2}\.json$/.test(call[1]), 'file name ' + call[1]);
   let data = JSON.parse(call[2]);
-  eq([data.format, data.meals.length, data.settings], [BACKUP_FORMAT, 4, {awake: false, cookAwake: true, clipOffer: true, appearance: 'light'}]);
+  eq([data.format, data.meals.length, data.settings], [BACKUP_FORMAT, 4, {awake: false, cookAwake: true, readSteps: false, clipOffer: true, appearance: 'light'}]);
 });
 
 test('restore asks first, then replaces the data', () => {
@@ -2090,6 +2094,93 @@ test('Cook mode finishes with a way back to the recipe', () => {
   assert(cookEl.textContent.includes('All steps done'), cookEl.textContent);
   [...cookEl.querySelectorAll('.cook-foot button')].pop().click();
   eq(cookEl.hidden, true);
+});
+
+// ---- Cook mode voice ----
+
+const cookEl = () => document.getElementById('cook');
+const spoken = () => bridgeCalls('cookVoiceSpeak').map(c => c[1]);
+
+function cookWithVoice() {
+  bridge.cookVoice = true;
+  openMeal(1);
+  openCook(1);
+  cookEl().querySelector('.cook-voice').click();
+  window.onCookVoice('listening', '');
+}
+
+test('voice commands are read from the last command word heard', () => {
+  eq(['next', 'okay next step', 'go back', 'say that again', 'what are the ingredients', 'close', 'stop', 'back to the recipe', 'exit', 'the sauce'].map(parseCookCommand),
+    ['next', 'next', 'back', 'repeat', 'ingredients', 'close', 'stop', 'recipe', 'recipe', '']);
+});
+
+test('amounts are read as they are said', () => {
+  eq([spokenAmount(1.5, 'tbsp', 1), spokenAmount(0.5, 'tsp', 1), spokenAmount(1, 'tbsp', 1), spokenAmount(3, 'cloves', 1),
+      spokenAmount(2, '', 1), spokenAmount('a pinch', '', 1), spokenAmount(0.25, 'lb', 1), spokenAmount(1, 'lb', 4 / 3)],
+    ['1 and a half tablespoons', 'half a teaspoon', '1 tablespoon', '3 cloves', '2', 'a pinch', 'a quarter of a pound', '1 and a third pounds']);
+});
+
+test('Voice only appears where voice control exists', () => {
+  openMeal(1);
+  openCook(1);
+  eq(cookEl().querySelector('.cook-voice'), null, 'not in the web version');
+  closeCook();
+  go('settings');
+  assert(!main().textContent.includes('Read steps aloud'));
+  bridge.cookVoice = true;
+  render();
+  assert(main().textContent.includes('Read steps aloud'), 'in Settings in the app');
+});
+
+test('voice commands move through Cook mode and flash the control they used', () => {
+  cookWithVoice();
+  eq(bridgeCalls('cookVoiceStart').length, 1);
+  assert(cookEl().textContent.includes('Listening'), cookEl().textContent);
+  eq(spoken(), [], 'steps are not read aloud by default');
+  window.onCookVoice('heard', 'next');
+  assert(cookEl().textContent.includes('Step 2 of 5'));
+  assert(cookEl().querySelector('.cook-foot .primary.flash'), 'Next flashed');
+  assert(cookEl().textContent.includes('Heard “next”'));
+  window.onCookVoice('heard', 'ingredients');
+  assert(cookEl().querySelector('.cook-sheet'), 'list opened');
+  window.onCookVoice('heard', 'back');
+  eq([!!cookEl().querySelector('.cook-sheet'), cookEl().textContent.includes('Step 2 of 5')], [false, true], '"back" closes the list first');
+  window.onCookVoice('heard', 'go back');
+  assert(cookEl().textContent.includes('Step 1 of 5'));
+  window.onCookVoice('heard', 'recipe');
+  eq([cookEl().hidden, bridgeCalls('cookVoiceStop').length], [true, 1], '"recipe" leaves Cook mode and stops listening');
+});
+
+test('with Read steps aloud on, each step is read with its amounts', () => {
+  setReadSteps(true);
+  cookWithVoice();
+  assert(spoken()[0].startsWith('Step 1. Brown the 1 pound sausage in 1 tablespoon olive oil'), spoken()[0]);
+  cookStep(1);
+  assert(spoken()[1].startsWith('Step 2. Add 2 peppers and 3 cloves garlic'), spoken()[1]);
+  window.onCookVoice('heard', 'stop');
+  eq(bridgeCalls('cookVoiceQuiet').length, 1);
+  let backup;
+  bridge.saveBackupFile = (name, json) => backup = JSON.parse(json);
+  exportBackup(true);
+  delete bridge.saveBackupFile;
+  eq(backup.settings.readSteps, true, 'kept in backups');
+});
+
+test('"repeat" reads the step even with Read steps aloud off', () => {
+  cookWithVoice();
+  window.onCookVoice('heard', 'repeat');
+  eq(spoken().length, 1);
+  assert(cookEl().querySelector('.cook-step.flash'), 'step flashed');
+});
+
+test('a refused microphone explains itself and turns voice off', () => {
+  bridge.cookVoice = true;
+  openMeal(1);
+  openCook(0);
+  cookEl().querySelector('.cook-voice').click();
+  window.onCookVoice('error', 'denied');
+  assert(cookEl().textContent.includes('needs the microphone'), cookEl().textContent);
+  eq(cookEl().querySelector('.cook-voice').textContent, 'Voice');
 });
 
 // ---- Report ----

@@ -7,3 +7,5 @@
 /keystore.properties
 *.jks
 *.keystore
+# Cook mode speech model, downloaded by the build (see app/build.gradle.kts)
+/app/src/main/assets/model-en-us/

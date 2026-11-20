@@ -1524,3 +1524,40 @@ html.cooking body {
     transition: none;
   }
 }
+
+/* ---- Cook mode voice ---- */
+
+.cook-voice {
+  min-height: 44px;
+}
+
+.cook-voice-status {
+  margin: 10px 16px 0;
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 16px;
+  background: light-dark(#e4eadc, #2b3928);
+  transition: background .3s;
+}
+
+.cook-voice-status.heard {
+  background: light-dark(#f3d27a, #6a5524);
+}
+
+.cook-voice-status.problem {
+  background: light-dark(#f6d9d3, #4a2b24);
+}
+
+.cook .flash {
+  background-color: #e3b341 !important;
+  color: #1d211c !important;
+  border-radius: 12px;
+  transition: background-color .3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cook .flash,
+  .cook-voice-status {
+    transition: none;
+  }
+}

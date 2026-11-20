@@ -126,11 +126,15 @@ function openCook(i) {
   let m = currentMeal();
   if (!m || !m.recipes[i]) return;
   cook = {meal: m.id, recipe: i, step: 0, added: {}, sheet: false};
+  voiceProblem = '';
+  flash = '';
+  heardCommand = '';
   renderCook();
   syncAwake();
 }
 
 function closeCook() {
+  stopCookVoice();
   cook = null;
   let el = document.getElementById('cook');
   el.hidden = true;
@@ -145,6 +149,7 @@ function cookStep(delta) {
   cook.step = Math.min(c.r.instructions.length, Math.max(0, cook.step + delta));
   cook.sheet = false;
   renderCook();
+  speakStep();
   let body = document.getElementById('cook-body');
   if (body) body.scrollTop = 0;
 }
@@ -183,20 +188,21 @@ function renderCook() {
   let body = done
     ? `<div class="cook-finish"><h2>All steps done</h2><p class="subhead">Enjoy it.</p></div>`
     : `<div class="cook-step-head"><span>Step ${i + 1} of ${n}</span>${s ? `<span class="cook-serves">Serves ${s}</span>` : ''}</div>
-       <p class="cook-step">${markedStep(r, i, factor)}</p>
+       <p class="cook-step${flashed('repeat')}">${markedStep(r, i, factor)}</p>
        <div class="divider"></div>
        <p class="cook-next">${i + 1 < n ? `<strong>Next:</strong> ${escapeHtml(r.instructions[i + 1])}` : '<strong>Last step.</strong>'}</p>
-       ${r.ingredients.length ? '<button class="text-btn cook-show" onclick="cookSheet(true)">Show ingredients</button>' : ''}`;
+       ${r.ingredients.length ? `<button class="text-btn cook-show${flashed('ingredients', 'close')}" onclick="cookSheet(true)">Show ingredients</button>` : ''}`;
   let uses = done ? [] : stepIngredients(r, i);
   let sheet = !cook.sheet ? '' : `<div class="cook-sheet-bg" onclick="if(event.target===this)cookSheet(false)"><div class="cook-sheet" role="dialog" aria-label="Ingredients">
        ${uses.length ? `<h3>For step ${i + 1}</h3>${uses.map(x => cookIngredientRow(r, x, factor, true)).join('')}` : ''}
        <h3>${uses.length ? 'Everything in this recipe' : 'Ingredients'}</h3>${r.ingredients.map(x => cookIngredientRow(r, x, factor, false)).join('')}
        <p class="muted small">Tap an ingredient once it's in.</p>
        <button class="secondary" onclick="cookSheet(false)">Close</button></div></div>`;
-  el.innerHTML = `<div class="cook-top"><button class="outline" onclick="closeCook()">Exit</button><strong class="cook-title">${escapeHtml(r.title)}</strong></div>
+  el.innerHTML = `<div class="cook-top"><button class="outline" onclick="closeCook()">Exit</button><strong class="cook-title">${escapeHtml(r.title)}</strong>${voiceButton()}</div>
     <div class="cook-progress" aria-hidden="true">${r.instructions.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'now' : ''}"></i>`).join('')}</div>
+    ${voiceStatus()}
     <div class="cook-body" id="cook-body">${body}</div>
-    <div class="cook-foot"><button class="outline" onclick="cookStep(-1)" ${i === 0 ? 'disabled' : ''}>Back</button><button class="primary" onclick="${done ? 'closeCook()' : 'cookStep(1)'}">${done ? 'Back to recipe' : i + 1 < n ? 'Next step' : 'Finish'}</button></div>
+    <div class="cook-foot"><button class="outline${flashed('back')}" onclick="cookStep(-1)" ${i === 0 ? 'disabled' : ''}>Back</button><button class="primary${flashed('next')}" onclick="${done ? 'closeCook()' : 'cookStep(1)'}">${done ? 'Back to recipe' : i + 1 < n ? 'Next step' : 'Finish'}</button></div>
     ${sheet}`;
 }
 
@@ -206,4 +212,193 @@ function cookBack() {
   if (cook.sheet) cookSheet(false);
   else closeCook();
   return true;
+}
+
+// ---- Voice: hands-free commands (Android app only; CookVoice.kt does the listening) ----
+
+// 'off', 'starting' (loading the speech model or asking for the microphone) or 'on'.
+let cookVoice = 'off',
+  heardCommand = '',
+  voiceProblem = '',
+  flash = '';
+
+function hasCookVoice() {
+  return !!(window.MealkeeperAndroid && window.MealkeeperAndroid.cookVoiceAvailable && window.MealkeeperAndroid.cookVoiceAvailable());
+}
+
+// The words a command can be said with. The recognizer only hears these (CookVoice's COMMAND_WORDS) and "go"/"step".
+const COOK_COMMANDS = [
+  ['next', ['next', 'forward', 'continue']],
+  ['back', ['back', 'previous']],
+  ['repeat', ['repeat', 'again', 'read']],
+  ['ingredients', ['ingredients', 'ingredient']],
+  ['close', ['close', 'hide']],
+  ['stop', ['stop', 'quiet']],
+  ['recipe', ['recipe', 'exit']]
+];
+
+// The last command word in what was heard ("okay next" -> next, "go back" -> back), or ''.
+function parseCookCommand(text) {
+  let found = '';
+  for (let w of str(text).toLowerCase().split(/[^a-z]+/))
+    for (let [command, words] of COOK_COMMANDS)
+      if (words.includes(w)) found = command;
+  return found;
+}
+
+function voiceButton() {
+  if (!hasCookVoice()) return '';
+  return cookVoice === 'off'
+    ? '<button class="outline cook-voice" onclick="toggleCookVoice()">Voice</button>'
+    : '<button class="primary cook-voice" onclick="toggleCookVoice()" aria-pressed="true">Voice on</button>';
+}
+
+function voiceStatus() {
+  if (voiceProblem) return `<p class="cook-voice-status problem" role="alert">${escapeHtml(voiceProblem)}</p>`;
+  if (cookVoice === 'off') return '';
+  let text = cookVoice === 'starting' ? 'Getting voice control ready…'
+    : heardCommand ? ` Heard “${heardCommand}”`
+    : 'Listening. Say “next”, “back”, “repeat”, “ingredients” or “recipe”.';
+  return `<p class="cook-voice-status${heardCommand ? ' heard' : ''}" role="status">${escapeHtml(text.trim())}</p>`;
+}
+
+// ' flash' on the control a voice command just used, so it's clear the command was heard.
+function flashed(...commands) {
+  return commands.includes(flash) ? ' flash' : '';
+}
+
+function toggleCookVoice() {
+  if (cookVoice !== 'off') return stopCookVoice(true);
+  voiceProblem = '';
+  cookVoice = 'starting';
+  window.MealkeeperAndroid.cookVoiceStart();
+  renderCook();
+}
+
+function stopCookVoice(render) {
+  if (cookVoice !== 'off' && window.MealkeeperAndroid && window.MealkeeperAndroid.cookVoiceStop) window.MealkeeperAndroid.cookVoiceStop();
+  cookVoice = 'off';
+  heardCommand = '';
+  if (render && cook) renderCook();
+}
+
+// CookVoice reports back here; see its header comment.
+window.onCookVoice = function(event, text) {
+  if (!cook) return;
+  if (event === 'listening') {
+    cookVoice = 'on';
+    renderCook();
+    speakStep();
+  } else if (event === 'heard') {
+    runCookCommand(parseCookCommand(text));
+  } else if (event === 'error') {
+    cookVoice = 'off';
+    voiceProblem = {
+      denied: 'Voice control needs the microphone. Allow it when asked, or in the phone\'s app settings.',
+      model: 'Voice control couldn\'t load its speech model. Try reinstalling the app.'
+    }[text] || 'Voice control stopped: the microphone isn\'t available.';
+    renderCook();
+  } else if (event === 'stopped') {
+    cookVoice = 'off';
+    heardCommand = '';
+    renderCook();
+  }
+};
+
+function runCookCommand(command) {
+  let c = cookingRecipe();
+  if (!command || !c) return;
+  // With the ingredients list open, "back" closes it rather than going to the previous step.
+  if (command === 'back' && cook.sheet) command = 'close';
+  heardCommand = command;
+  flash = command;
+  clearTimeout(window._cookFlash);
+  window._cookFlash = setTimeout(() => {
+    flash = '';
+    heardCommand = '';
+    if (cook) renderCook();
+  }, 1500);
+  if (command === 'next') {
+    if (cook.step < c.r.instructions.length) return cookStep(1);
+  } else if (command === 'back') {
+    if (cook.step > 0) return cookStep(-1);
+  } else if (command === 'repeat') {
+    speakStep(true);
+  } else if (command === 'ingredients') {
+    cook.sheet = true;
+    if (readSteps) speak(spokenIngredients(c.m, c.r));
+  } else if (command === 'close') {
+    cook.sheet = false;
+    quiet();
+  } else if (command === 'stop') {
+    quiet();
+  } else if (command === 'recipe') {
+    return closeCook();
+  }
+  renderCook();
+}
+
+function speak(text) {
+  if (cookVoice === 'on' && text) window.MealkeeperAndroid.cookVoiceSpeak(text);
+}
+
+function quiet() {
+  if (cookVoice === 'on') window.MealkeeperAndroid.cookVoiceQuiet();
+}
+
+// Reads the current step aloud when voice is on and Settings asks for it (always, for "repeat").
+function speakStep(asked) {
+  let c = cookingRecipe();
+  if (!c || cookVoice !== 'on' || !(readSteps || asked)) return;
+  let n = c.r.instructions.length;
+  speak(cook.step >= n ? 'All steps done.' : spokenStep(c.m, c.r, cook.step));
+}
+
+const SPOKEN_FRACTIONS = {'½': 'a half', '¼': 'a quarter', '¾': 'three quarters', '⅓': 'a third', '⅔': 'two thirds', '⅛': 'an eighth', '⅜': 'three eighths', '⅝': 'five eighths', '⅞': 'seven eighths'};
+const SPOKEN_UNITS = {tbsp: 'tablespoon', tbs: 'tablespoon', tsp: 'teaspoon', oz: 'ounce', lb: 'pound', lbs: 'pound', g: 'gram', kg: 'kilogram', ml: 'milliliter', l: 'liter'};
+
+// An amount as it should sound: "1 ½ tbsp" -> "1 and a half tablespoons", "½ tsp" -> "half a teaspoon".
+function spokenAmount(q, unit, factor) {
+  let shown = scaledQty(q, '', factor),
+    m = /^(\d+(?:\.\d+)?)?\s*([½¼¾⅓⅔⅛⅜⅝⅞])?$/.exec(shown.trim());
+  let u = str(unit).trim(),
+    word = SPOKEN_UNITS[u.toLowerCase()];
+  if (!m || (!m[1] && !m[2])) return [shown, u].filter(Boolean).join(' ');
+  let whole = m[1] || '',
+    frac = m[2] ? SPOKEN_FRACTIONS[m[2]] : '';
+  if (!u) return whole && frac ? `${whole} and ${frac}` : whole || frac;
+  if (!word) return [whole && frac ? `${whole} and ${frac}` : whole || frac, u].join(' ');
+  if (!whole) return frac === 'a half' ? ` half a ${word}`.trim() : `${frac} of a ${word}`;
+  if (frac) return `${whole} and ${frac} ${word}s`;
+  return whole === '1' ? ` 1 ${word}`.trim() : `${whole} ${word}s`;
+}
+
+function spokenStep(m, r, i) {
+  let text = r.instructions[i] || '',
+    factor = servingsFactor(m, r),
+    out = '',
+    pos = 0;
+  for (let h of mentions(text, r.ingredients)) {
+    let amount = spokenAmount(h.ing.quantity, h.ing.unit, factor);
+    out += text.slice(pos, h.start) + (amount ? amount + ' ' : '') + text.slice(h.start, h.end);
+    pos = h.end;
+  }
+  return ` Step ${i + 1}. ${out + text.slice(pos)}`.trim().replace(/°F/g, ' degrees').replace(/°C/g, ' degrees Celsius');
+}
+
+function spokenIngredients(m, r) {
+  let factor = servingsFactor(m, r);
+  return r.ingredients.map(x => [spokenAmount(x.quantity, x.unit, factor), x.name].filter(Boolean).join(' ')).join('. ');
+}
+
+// Settings: only where voice control exists (the Android app).
+function readStepsSetting() {
+  if (!hasCookVoice()) return '';
+  return `<div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">♪</div><div><strong>Read steps aloud</strong><div class="muted small" style="margin-top:5px">When voice control is on in Cook mode, each step is read out with its amounts. Talk over it to give the next command.</div></div></div><input class="toggle" type="checkbox" ${readSteps ? 'checked' : ''} onchange="setReadSteps(this.checked)"></div>`;
+}
+
+function setReadSteps(v) {
+  readSteps = v;
+  render();
+  notify(v ? 'Cook mode will read steps aloud' : 'Cook mode won\'t read steps aloud');
 }

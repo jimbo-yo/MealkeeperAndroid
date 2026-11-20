@@ -62,6 +62,8 @@ class MainActivity : Activity() {
     private val io = Executors.newSingleThreadExecutor()
     private val aiApi by lazy { AiApi(this) { script -> mainHandler.post { runJs(script) } } }
     private val voice by lazy { Voice(this) { script -> mainHandler.post { runJs(script) } } }
+    private val cookVoice by lazy { CookVoice(this) { script -> mainHandler.post { runJs(script) } } }
+    private var cookVoiceUsed = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -166,10 +168,17 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         if (voiceUsed && !askingForMic) voice.stop(tellPage = true)
+        if (cookVoiceUsed && !askingForMic) cookVoice.stop(tellPage = true)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_COOK_MICROPHONE) {
+            askingForMic = false
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) cookVoice.start()
+            else runJs("window.onCookVoice&&window.onCookVoice('error','denied')")
+            return
+        }
         if (requestCode != REQUEST_MICROPHONE) return
         askingForMic = false
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) voice.listen()
@@ -576,6 +585,29 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun voiceStop() = runOnUiThread { if (voiceUsed) voice.stop(tellPage = false) }
 
+        // Hands-free Cook mode; see CookVoice and the voice section of cook.js. The first start asks for the microphone.
+        @JavascriptInterface
+        fun cookVoiceAvailable(): Boolean = cookVoice.available
+
+        @JavascriptInterface
+        fun cookVoiceStart() = runOnUiThread {
+            cookVoiceUsed = true
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) cookVoice.start()
+            else {
+                askingForMic = true
+                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_COOK_MICROPHONE)
+            }
+        }
+
+        @JavascriptInterface
+        fun cookVoiceStop() = runOnUiThread { if (cookVoiceUsed) cookVoice.stop(tellPage = false) }
+
+        @JavascriptInterface
+        fun cookVoiceSpeak(text: String) = runOnUiThread { if (cookVoiceUsed) cookVoice.speak(text) }
+
+        @JavascriptInterface
+        fun cookVoiceQuiet() = runOnUiThread { if (cookVoiceUsed) cookVoice.quiet() }
+
         // Opens the Clock app's new-alarm screen filled in, so the user confirms it there. Returns false if no clock
         // app takes the request. Clock apps set it for the next time the clock shows that time.
         @JavascriptInterface
@@ -633,6 +665,7 @@ class MainActivity : Activity() {
         io.shutdown()
         aiApi.cancelAll()
         if (voiceUsed) voice.release()
+        if (cookVoiceUsed) cookVoice.release()
         if (::webView.isInitialized) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             webView.destroy()
@@ -644,6 +677,7 @@ class MainActivity : Activity() {
         private const val REQUEST_SAVE_FILE = 41
         private const val REQUEST_RESTORE_BACKUP = 42
         private const val REQUEST_MICROPHONE = 43
+        private const val REQUEST_COOK_MICROPHONE = 44
         private const val PREF_CLIPBOARD_WATCH = "clipboardWatch"
         private const val PREF_APPEARANCE = "appearance"
         private const val SHARED_FILE_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000

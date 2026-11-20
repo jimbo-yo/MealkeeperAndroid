@@ -85,5 +85,22 @@ window.MealkeeperAndroid = {
   },
   voiceStop() {
     this.calls.push(['voiceStop']);
+  },
+  // Whether Cook mode's voice model is bundled (tests set this); tests answer through window.onCookVoice.
+  cookVoice: false,
+  cookVoiceAvailable() {
+    return this.cookVoice;
+  },
+  cookVoiceStart() {
+    this.calls.push(['cookVoiceStart']);
+  },
+  cookVoiceStop() {
+    this.calls.push(['cookVoiceStop']);
+  },
+  cookVoiceSpeak(text) {
+    this.calls.push(['cookVoiceSpeak', text]);
+  },
+  cookVoiceQuiet() {
+    this.calls.push(['cookVoiceQuiet']);
   }
 };
