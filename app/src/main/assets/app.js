@@ -1448,10 +1448,11 @@ function sharePrompt() {
 // gets inApp = true, and title is what the chat shows the question is about.
 function aiModal(eyebrow, title, intro, placeholder, chips, build, after, about) {
   pendingAsk = {build, after, about};
-  let name = AI_GUIDES[myAi].name, inApp = hasKey(myAi),
+  let guide = AI_GUIDES[myAi], name = guide.name, inApp = hasKey(myAi),
     // Without a key, Claude can be asked inside the user's project (a share can only start an ordinary chat).
-    toProject = !inApp && myAi === 'claude' && !!claudeProject;
-  openModal(`<div class="eyebrow">${eyebrow}</div><h2>${escapeHtml(title)}</h2><p class="subhead" style="margin-bottom:12px">${intro}</p><textarea id="ai-request" class="field" rows="3" style="min-height:90px" placeholder="${escapeHtml(placeholder)}"></textarea><div class="actions" style="margin-top:10px">${chips.map(c => `<button class="outline" style="font-size:14px;padding:7px 12px" onclick="document.getElementById('ai-request').value=this.textContent">${escapeHtml(c)}</button>`).join('')}</div><p class="muted small" style="margin:14px 0 0">${inApp ? `${name} answers here in the app.` : toProject ? `Ask in your ${name} project, or in a new chat.` : `Opens a new chat in ${name}.`} <button class="text-btn" style="font-size:14px" onclick="closeModal();go('settings')">Change</button></p><div class="modal-foot">${toProject ? `<button class="secondary" onclick="sendToAi()">New chat ↗</button><button class="primary" onclick="sendToProject()">Ask in my project ↗</button>` : `<button class="primary" onclick="sendToAi()">Ask ${name}${inApp ? '' : ' ↗'}</button>`}</div>`);
+    toProject = !inApp && myAi === 'claude' && !!claudeProject,
+    pasteOnly = !inApp && !inAndroidApp() && !guide.newChat;
+  openModal(`<div class="eyebrow">${eyebrow}</div><h2>${escapeHtml(title)}</h2><p class="subhead" style="margin-bottom:12px">${intro}</p><textarea id="ai-request" class="field" rows="3" style="min-height:90px" placeholder="${escapeHtml(placeholder)}"></textarea><div class="actions" style="margin-top:10px">${chips.map(c => `<button class="outline" style="font-size:14px;padding:7px 12px" onclick="document.getElementById('ai-request').value=this.textContent">${escapeHtml(c)}</button>`).join('')}</div><p class="muted small" style="margin:14px 0 0">${inApp ? `${name} answers here in the app.` : toProject ? `Ask in your ${name} project, or in a new chat.` : pasteOnly ? `Copies your request and meal so you can paste them (Ctrl+V) into ${name}.` : `Opens a new chat in ${name}.`} <button class="text-btn" style="font-size:14px" onclick="closeModal();go('settings')">Change</button></p><div class="modal-foot">${toProject ? `<button class="secondary" onclick="sendToAi()">New chat ↗</button><button class="primary" onclick="sendToProject()">Ask in my project ↗</button>` : `<button class="primary" onclick="sendToAi()">${pasteOnly ? `Copy & open ${name} ↗` : `Ask ${name}${inApp ? '' : ' ↗'}`}</button>`}</div>`);
 }
 
 function sendToAi() {
@@ -1511,15 +1512,32 @@ function saveClaudeProject() {
 // (copied too, since very long links can fail and then open a plain new chat).
 const MAX_PROMPT_URL = 6000;
 
+let pendingPasteUrl = '';
+
+function openPasteChat() {
+  let url = pendingPasteUrl;
+  pendingPasteUrl = '';
+  closeModal();
+  if (url) openUrl(url);
+}
+
 function sendPrompt(ai, prompt) {
   let guide = AI_GUIDES[ai],
     android = window.MealkeeperAndroid,
     how = android && android.sendToAiApp ? android.sendToAiApp(ai, prompt) : 'missing';
   if (how === 'shared') return notify(`Opening ${guide.name}. Check the message, then send it.`);
   if (how === 'opened') return copyText(prompt, `Prompt copied. Paste it into a new ${guide.name} chat.`);
-  let url = guide.newChat ? guide.newChat + encodeURIComponent(prompt) : '',
-    fits = !!url && url.length <= MAX_PROMPT_URL;
-  copyText(prompt, fits ? `Opening ${guide.name}. The prompt is copied too, in case you need to paste it.` : `Prompt copied — paste it into ${guide.name}.`);
+  if (!guide.newChat) {
+    // AI web apps that ignore ?q= (like Gemini) can't prefill the message box, so tell the user to paste before
+    // the browser covers Prompt to Pan.
+    copyText(prompt, 'Prompt copied');
+    pendingPasteUrl = guide.url;
+    openModal(`<div class="eyebrow">${escapeHtml(guide.name.toUpperCase())}</div><h2>Prompt copied — ready to paste</h2><p class="subhead">Your request and meal are on your clipboard. ${escapeHtml(guide.name)} doesn't let apps prefill its chat box, so when it opens, click the message box, paste (<strong>Ctrl+V</strong> / <strong>⌘V</strong>), and send.</p><div class="modal-foot"><button class="outline" onclick="pendingPasteUrl='';closeModal()">Cancel</button><button class="primary" onclick="openPasteChat()">Open ${escapeHtml(guide.name)} ↗</button></div>`, true);
+    return;
+  }
+  let url = guide.newChat + encodeURIComponent(prompt),
+    fits = url.length <= MAX_PROMPT_URL;
+  copyText(prompt, fits ? `Opening ${guide.name}. The prompt is copied too, in case you need to paste it.` : `Prompt copied. Paste it into the new ${guide.name} chat.`);
   openUrl(fits ? url : guide.url);
 }
 
