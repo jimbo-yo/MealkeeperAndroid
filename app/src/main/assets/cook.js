@@ -970,7 +970,7 @@ function webSpeechCtor() {
 }
 
 function hasWebCookVoice() {
-  return !!webSpeechCtor();
+  return !webVoiceUnavailable && !!webSpeechCtor();
 }
 
 function hasWebReadAloud() {
@@ -986,6 +986,7 @@ function hasCookVoice() {
 let webRec = null,
   webRecWanted = false,
   webRecRestart = null,
+  webVoiceUnavailable = false,
   webSpeaking = false,
   webSpeakingWords = new Set(),
   webSpeakSeq = 0,
@@ -1051,8 +1052,9 @@ function startWebCookVoice() {
     if (err === 'no-speech' || err === 'aborted') return;
     stopWebCookVoice();
     let mapped = err === 'not-allowed' || err === 'service-not-allowed' ? 'denied'
-      : err === 'network' ? 'network'
+      : err === 'network' ? (navigator && navigator.onLine === false ? 'network' : 'unavailable')
       : 'mic';
+    if (mapped === 'unavailable') webVoiceUnavailable = true;
     window.onCookVoice('error', mapped);
   };
 
@@ -1242,7 +1244,8 @@ window.onCookVoice = function(event, text) {
     voiceProblem = {
       denied: 'Voice control needs the microphone. Allow it when asked, or in your browser or phone settings.',
       model: 'Voice control couldn\'t load its speech model. Try reinstalling the app.',
-      network: 'Voice control needs an internet connection in this browser.'
+      network: 'Voice control needs an internet connection in this browser.',
+      unavailable: 'Voice commands aren\'t supported in this browser (Brave and some Chromium browsers disable the speech service). Try Chrome, Edge, Safari, or the Android app.'
     }[text] || 'Voice control stopped: the microphone isn\'t available.';
     syncAwake();
     renderCook();

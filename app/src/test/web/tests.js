@@ -2404,7 +2404,13 @@ test('web version supports Cook mode voice via Web Speech API, read-aloud fallba
     assert(cookEl().querySelector('.cook-sheet'), '"i" opened ingredients');
     document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
     assert(!cookEl().querySelector('.cook-sheet') && !cookEl().hidden, 'Escape closed sheet first');
+
+    // If a privacy browser (like Brave) rejects SpeechRecognition with 'network' while online, explain clearly and fall back to Read.
+    lastRec.onerror({error: 'network'});
+    assert(cookEl().textContent.includes('Brave'), 'explains Brave / missing speech service: ' + cookEl().textContent);
+    assert(cookEl().querySelector('.cook-read'), 'falls back to Read button');
     closeCook();
+    webVoiceUnavailable = false;
 
     // Without SpeechRecognition, browsers with speechSynthesis get a Read button.
     window.SpeechRecognition = undefined;
@@ -2417,6 +2423,7 @@ test('web version supports Cook mode voice via Web Speech API, read-aloud fallba
     closeCook();
   } finally {
     stopWebCookVoice();
+    webVoiceUnavailable = false;
     window.MealkeeperAndroid = savedAndroid;
     window.SpeechRecognition = savedSR;
     window.webkitSpeechRecognition = savedWebkitSR;
