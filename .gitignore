@@ -10,3 +10,5 @@
 # Cook mode speech model, downloaded by the build (see app/build.gradle.kts)
 /app/vosk-assets/
 /app/src/main/assets/model-en-us/
+# Desktop Rust build artifacts
+/desktop/target/

@@ -1,18 +1,20 @@
-// In-app chat with Claude, ChatGPT or Grok through the user's own API key (Settings → AI accounts).
-// MainActivity keeps the keys and makes the HTTPS calls (AiApi.kt); this file builds each request, reads the streamed
-// reply and keeps the conversation. When the AI calls save_meal, the meal goes straight into the app: no JSON to copy.
+// In-app chat with Gemini, Claude, ChatGPT or Grok through the user's own API key (Settings → AI accounts).
+// MainActivity (or the desktop bridge) keeps the keys and makes the HTTPS calls; this file builds each request, reads
+// the streamed reply and keeps the conversation. When the AI calls save_meal, the meal goes straight into the app.
 // Loaded before app.js, so it only uses app.js's functions and constants when called, never at load time.
 
-// Claude uses Anthropic's Messages API; ChatGPT and Grok use the Responses API (OpenAI's, which xAI also offers).
-// model is the default until the user picks one from the account's model list.
+// Gemini uses Google's OpenAI-compatible Chat Completions API; Claude uses Anthropic's Messages API; ChatGPT and Grok
+// use the Responses API. model is the default until the user picks one from the account's model list.
 const AI_APIS = {
+  gemini: {provider: 'Google', format: 'completions', model: 'gemini-4-neon', keyUrl: 'https://aistudio.google.com/apikey', keyHint: 'AIza…'},
   claude: {provider: 'Anthropic', format: 'messages', model: 'claude-opus-5-5', keyUrl: 'https://console.anthropic.com/settings/keys', keyHint: 'sk-ant-…'},
   chatgpt: {provider: 'OpenAI', format: 'responses', model: 'gpt-6-sol', keyUrl: 'https://platform.openai.com/api-keys', keyHint: 'sk-…'},
   grok: {provider: 'xAI', format: 'responses', model: 'grok-4.7', keyUrl: 'https://console.x.ai/', keyHint: 'xai-…'}
 };
 
-// Which models from an account's /v1/models list can chat (OpenAI's list includes speech, image and embedding models).
+// Which models from an account's /v1/models list can chat (lists also include speech, image and embedding models).
 const CHAT_MODELS = {
+  gemini: id => /^gemini-/.test(id) && !/(embedding|imagen|veo|tts|audio|live|aqa|robotics|computer-use)/.test(id),
   claude: id => /^claude-/.test(id),
   chatgpt: id => /^(gpt-|o\d)/.test(id) && !/(audio|realtime|live|transcribe|tts|image|search|embedding|moderation|instruct|cyber|daybreak|rosalind)/.test(id),
   grok: id => /^grok-/.test(id) && !/(image|imagine|vision|video)/.test(id)
@@ -103,6 +105,10 @@ function claudeTool() {
 
 function responsesTool(ai) {
   return {type: 'function', ...SAVE_MEAL, parameters: MEAL_SCHEMA, ...(ai === 'chatgpt' ? {strict: true} : {})};
+}
+
+function completionsTool() {
+  return {type: 'function', function: {...SAVE_MEAL, parameters: MEAL_SCHEMA}};
 }
 
 // Adds the meal, or updates the one with the same mealkeeper_id (only the id: a new meal that happens to share a
@@ -260,7 +266,7 @@ function loadModels(ai, done) {
   aiCall(ai, 'GET', '/v1/models', null, '', null, (status, body) => {
     let ids = [];
     if (status === 200) try {
-      ids = arr(obj(JSON.parse(body)).data).map(m => str(obj(m).id)).filter(CHAT_MODELS[ai])
+      ids = arr(obj(JSON.parse(body)).data).map(m => str(obj(m).id).replace(/^models\//, '')).filter(CHAT_MODELS[ai])
     } catch (e) {}
     if (ids.length) {
       let preferred = AI_APIS[ai].model;
@@ -354,6 +360,16 @@ function sendChat(text, prompt, about, mustSave) {
     body = {model, max_tokens: 64000, stream: true, system: chatSystem(), tools: [claudeTool()], messages: chat.messages.concat([turn.message]), cache_control: {type: 'ephemeral'}};
     if (CLAUDE_EFFORT.test(model)) body.output_config = {effort: 'medium'};
     if (CLAUDE_FALLBACK.test(model)) body.fallbacks = 'default';
+  } else if (api.format === 'completions') {
+    turn.sentMessages = chat.pending.concat([{role: 'user', content: prompt}]);
+    path = '/v1/chat/completions';
+    body = {
+      model,
+      stream: true,
+      tools: [completionsTool()],
+      messages: [{role: 'system', content: chatSystem()}, ...chat.messages, ...turn.sentMessages]
+    };
+    if (mustSave) body.tool_choice = 'required';
   } else {
     path = '/v1/responses';
     body = {model, stream: true, store: true, tools: [responsesTool(ai)], input: chat.pending.concat([{role: 'user', content: prompt}])};
@@ -365,8 +381,9 @@ function sendChat(text, prompt, about, mustSave) {
     else if (!chat.responseId) body.input.unshift({role: 'system', content: chatSystem()});
   }
   chatTurn = turn;
+  let reader = api.format === 'messages' ? readMessagesEvent : api.format === 'completions' ? readCompletionsEvent : readResponsesEvent;
   turn.id = aiCall(ai, 'POST', path, body, body.fallbacks ? FALLBACK_BETA : '', events => {
-    events.forEach(e => (api.format === 'messages' ? readMessagesEvent : readResponsesEvent)(turn, e));
+    events.forEach(e => reader(turn, e));
     showLiveReply();
   }, (status, text) => finishTurn(turn, status, text));
   render();
@@ -435,13 +452,37 @@ function readResponsesEvent(t, e) {
   }
 }
 
+// OpenAI-compatible Chat Completions stream (Gemini).
+function readCompletionsEvent(t, e) {
+  if (e.error) {
+    t.error = str(obj(e.error).message) || 'error';
+    return;
+  }
+  let c = arr(e.choices)[0];
+  if (!c) return;
+  let d = obj(c.delta);
+  if (d.content) t.text += str(d.content);
+  if (Array.isArray(d.tool_calls)) {
+    for (let tc of d.tool_calls) {
+      let idx = Number.isFinite(tc.index) ? tc.index : 0;
+      let cur = t.calls[idx] || (t.calls[idx] = {id: '', name: '', arguments: ''});
+      if (tc.id) cur.id = str(tc.id);
+      let fn = obj(tc.function);
+      if (fn.name) cur.name += str(fn.name);
+      if (fn.arguments) cur.arguments += str(fn.arguments);
+      t.writing = true;
+    }
+  }
+  if (c.finish_reason) t.stop = c.finish_reason;
+}
+
 function turnProblem(t, status, body) {
   let name = AI_GUIDES[t.ai].name;
   if (status < 200 || status > 299) return apiErrorMessage(t.ai, status, body);
   if (t.error) return `${name} had a problem: ${t.error}`;
-  if (t.stop === 'refusal') return `${name} declined to answer that. Try asking another way.`;
-  if (t.stop === 'max_tokens' || t.stop === 'max_output_tokens') return 'The reply got too long and was cut off. Try asking for less at once.';
-  if (t.format === 'messages' ? !t.stop : t.stop !== 'done') return `The reply from ${name} was cut off. Try again.`;
+  if (t.stop === 'refusal' || t.stop === 'content_filter') return `${name} declined to answer that. Try asking another way.`;
+  if (t.stop === 'max_tokens' || t.stop === 'max_output_tokens' || t.stop === 'length') return 'The reply got too long and was cut off. Try asking for less at once.';
+  if (t.format === 'responses' ? t.stop !== 'done' : !t.stop) return `The reply from ${name} was cut off. Try again.`;
   return '';
 }
 
@@ -458,6 +499,28 @@ function finishTurn(t, status, body) {
     chat.pending = t.blocks.filter(b => b && b.type === 'tool_use' && content.some(c => c.id === b.id)).map(b => {
       let r = runTool(b.name, b.input);
       return {type: 'tool_result', tool_use_id: b.id, content: r.error || r.text, ...(r.error ? {is_error: true} : {})};
+    });
+  } else if (t.format === 'completions') {
+    let calls = t.calls.filter(c => c && c.name);
+    if (!problem && !t.text.trim() && !calls.length) problem = `${AI_GUIDES[t.ai].name} didn't reply. Try again.`;
+    if (problem) return failTurn(t, problem);
+    if (t.text.trim()) chat.items.push({role: 'assistant', text: t.text.trim()});
+    let assistantMsg = {role: 'assistant', content: t.text.trim() || null};
+    if (calls.length) {
+      assistantMsg.tool_calls = calls.map((c, idx) => ({
+        id: c.id || `call_${idx + 1}`,
+        type: 'function',
+        function: {name: c.name, arguments: c.arguments || '{}'}
+      }));
+    }
+    chat.messages.push(...t.sentMessages, assistantMsg);
+    chat.pending = calls.map((c, idx) => {
+      let input;
+      try {
+        input = JSON.parse(c.arguments)
+      } catch (e) {}
+      let r = runTool(c.name, input);
+      return {role: 'tool', tool_call_id: c.id || `call_${idx + 1}`, content: r.error || r.text};
     });
   } else {
     if (problem) return failTurn(t, problem);

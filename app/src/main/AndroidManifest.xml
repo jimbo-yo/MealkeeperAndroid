@@ -6,8 +6,9 @@
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <!-- Chat voice (Voice) and hands-free Cook mode (CookVoice): asked for the first time a mic button is tapped. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- Lets MainActivity find the ChatGPT, Claude and Grok apps (Android 11+ package visibility); see AI_APPS. -->
+    <!-- Lets MainActivity find the Gemini, ChatGPT, Claude and Grok apps (Android 11+ package visibility); see AI_APPS. -->
     <queries>
+        <package android:name="com.google.android.apps.bard" />
         <package android:name="com.openai.chatgpt" />
         <package android:name="com.anthropic.claude" />
         <package android:name="ai.x.grok" />

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Prompt to Pan",
+  "version": "1.1.0",
+  "identifier": "com.jimboyo.prompttopan",
+  "build": {
+    "frontendDist": "../app/src/main/assets"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["json"],
+        "name": "Prompt to Pan Meal",
+        "description": "Prompt to Pan exported meal file",
+        "mimeType": "application/json",
+        "role": "Viewer"
+      }
+    ]
+  }
+}

@@ -53,7 +53,8 @@ class AiApi(context: Context, private val runJs: (String) -> Unit) {
         executor.execute {
             var conn: HttpURLConnection? = null
             try {
-                conn = (URL(provider.baseUrl + path).openConnection() as HttpURLConnection).apply {
+                val targetPath = if (ai == "gemini") path.removePrefix("/v1") else path
+                conn = (URL(provider.baseUrl + targetPath).openConnection() as HttpURLConnection).apply {
                     requestMethod = method
                     connectTimeout = 20_000
                     readTimeout = 180_000
@@ -158,9 +159,12 @@ class AiApi(context: Context, private val runJs: (String) -> Unit) {
         private const val KEY_ALIAS = "ai_keys"
         private const val CIPHER = "AES/GCM/NoPadding"
         private const val FLUSH_MS = 60L
-        private val PATHS = setOf("/v1/messages", "/v1/responses", "/v1/models")
-        // Keyed like the page's AI_GUIDES. OpenAI and xAI share the Responses API; Anthropic has the Messages API.
+        private val PATHS = setOf("/v1/messages", "/v1/responses", "/v1/chat/completions", "/v1/models")
+        // Keyed like the page's AI_GUIDES. Gemini uses Google's OpenAI-compatible endpoint; OpenAI and xAI share the Responses API; Anthropic has Messages.
         private val PROVIDERS = mapOf(
+            "gemini" to Provider("https://generativelanguage.googleapis.com/v1beta/openai") {
+                mapOf("Authorization" to "Bearer $it")
+            },
             "claude" to Provider("https://api.anthropic.com") {
                 mapOf("x-api-key" to it, "anthropic-version" to "2026-10-21")
             },

@@ -18,7 +18,7 @@ let navStack = [],
   recipeOpen = false,
   lastAwake = null,
   importText = '',
-  myAi = 'chatgpt',
+  myAi = 'gemini',
   appearance = 'light',
   lastAppearance = null,
   clipOffer = true,
@@ -454,6 +454,17 @@ const ONE_OFF_PROMPT = `Send the meal we've planned in this conversation to my P
 ${EXPORT_FORMAT}`;
 
 const AI_GUIDES = {
+  gemini: {
+    name: 'Gemini',
+    url: 'https://gemini.google.com/app',
+    newChat: 'https://gemini.google.com/app?q=',
+    steps: [
+      'Tap <strong>Copy instructions</strong> below.',
+      'In Gemini, open <strong>Gems</strong> in the sidebar and choose <strong>New Gem</strong> (for example “Meal planning”).',
+      'Paste into the Gem’s <strong>Instructions</strong> and save.',
+      'Plan your meals in chats with that Gem.'
+    ]
+  },
   chatgpt: {
     name: 'ChatGPT',
     url: 'https://chatgpt.com/',
@@ -708,9 +719,9 @@ function confirmRestore() {
 
 // ---- Where the app is running ----
 
-// The Android app (MainActivity's bridge), or else the web version in a browser.
+// The Android app (MainActivity's bridge), or else desktop/web in a browser or Tauri WebView.
 function inAndroidApp() {
-  return !!window.MealkeeperAndroid
+  return !!window.MealkeeperAndroid && !window.MealkeeperDesktop
 }
 
 // An iPhone or iPad. iPads report themselves as Macs, but Macs have no touch screen.
@@ -738,7 +749,7 @@ function showWebNotice() {
   try {
     dismissed = localStorage.getItem(IOS_HINT_DISMISSED) === '1'
   } catch (e) {}
-  if (inAndroidApp() || isStandalone() || (isIos() ? dismissed : !isAndroidBrowser())) return notice.hidden = true;
+  if (inAndroidApp() || window.MealkeeperDesktop || isStandalone() || (isIos() ? dismissed : !isAndroidBrowser())) return notice.hidden = true;
   notice.innerHTML = isIos() ?
     '<span>On iPhone: tap <strong>Share</strong> ⬆︎, then <strong>Add to Home Screen</strong> to use Prompt to Pan like an app.</span><button aria-label="Dismiss" onclick="dismissIosHint()">×</button>' :
     'Android app coming soon to Google Play.';
@@ -1005,7 +1016,7 @@ function aiPage() {
 <ol style="padding-left:20px;margin:0 0 14px;line-height:1.6;font-size:16px"><li style="margin-bottom:6px">Tap <strong>Save skill file</strong> below.</li><li style="margin-bottom:6px">In Claude, check that <strong>Settings → Capabilities → Code execution and file creation</strong> is on.</li><li style="margin-bottom:6px">Open <strong>claude.ai</strong> in a browser (the Claude app has no skills screen), go to <strong>Customize → Skills</strong>, tap <strong>+</strong>, then <strong>Create skill → Upload a skill</strong>, and pick <strong>${SKILL_NAME}.zip</strong>. The skill then works in the Claude app too.</li></ol>
 <p class="muted small" style="line-height:1.5;margin:0 0 14px">Already have a Claude project for meals? Its instructions win over the skill, so copy the instructions below again and replace the old ones, or the project keeps asking for a code block.</p>
 <div class="actions"><button class="primary" onclick="saveSkill()">⤓ Save skill file</button><button class="secondary" onclick="openAi('claude')">Open Claude ↗</button></div></div>` : '';
-  return `<div class="eyebrow">PLAN WITH YOUR AI</div><h1 class="headline">Brainstorm there, cook here</h1><p class="subhead">Plan meals with ChatGPT, Claude or Grok the way you normally would. When you're happy, say <strong>“send it to the pan”</strong> and the meal comes here with its recipes, shopping list and cooking timeline.</p>
+  return `<div class="eyebrow">PLAN WITH YOUR AI</div><h1 class="headline">Brainstorm there, cook here</h1><p class="subhead">Plan meals with Gemini, ChatGPT, Claude or Grok the way you normally would. When you're happy, say <strong>“send it to the pan”</strong> and the meal comes here with its recipes, shopping list and cooking timeline.</p>
 ${hasApi() ? `<div class="panel">${step('✦', `Or chat with ${guide.name} right here`, hasKey(myAi) ? `Your ${guide.name} key is connected: meals you plan in the chat go straight into the app.` : `Add your own ${AI_APIS[myAi].provider} API key and ${guide.name} plans meals inside Prompt to Pan, no copying.`)}<button class="primary" onclick="${hasKey(myAi) ? `go('chat')` : `keyModal('${myAi}')`}">${hasKey(myAi) ? 'Open chat' : 'Add API key'}</button></div>` : ''}
 ${skill}<div class="panel">${step('1', claude ? 'Or set up a Claude project' : 'Set up your AI once', claude ? 'Works on any plan: give a project standing instructions, and plan your meals in its chats.' : 'Give it standing instructions, so you never have to paste a prompt into a chat.')}
 <div class="muted small" style="margin-top:4px">Your AI</div>${aiChoice()}
@@ -1021,7 +1032,7 @@ ${inAndroidApp() ? step('↗', 'Or share it', 'Long-press the reply, tap <strong
 }
 
 function settingsPage() {
-  return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="row"><div class="recipe-icon">◑</div><div style="flex:1"><strong>Appearance</strong><div class="muted small" style="margin-top:4px">Light is linen; dark is a soft olive.</div></div></div><div class="tabs" style="margin:10px 0 0">${Object.entries(APPEARANCES).map(([k, name]) => `<button class="tab ${k === appearance ? 'active' : ''}" onclick="setAppearance('${k}')">${name}</button>`).join('')}</div></div><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Prompt to Pan is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div>${readStepsSetting()}</div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a meal export from ChatGPT, Claude or another AI.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✦</div><div style="flex:1"><strong>Your AI</strong><div class="muted small" style="margin-top:4px">Used by Chat, Revise with AI and Ask AI. With an API key (AI accounts below) they answer inside the app; without one they open the AI's app.</div></div></div>${aiChoice()}<div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up the ChatGPT, Claude or Grok app to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div>${inAndroidApp() ? `<div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in ChatGPT or Claude and come back, Prompt to Pan offers to import it. Android shows a notice each time it checks a new copy.</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div>` : ''}</div>${aiAccountsPanel()}<div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.${hasApi() ? ' AI API keys aren\'t included.' : ''}</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>${sharePanel()}`
+  return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="row"><div class="recipe-icon">◑</div><div style="flex:1"><strong>Appearance</strong><div class="muted small" style="margin-top:4px">Light is linen; dark is a soft olive.</div></div></div><div class="tabs" style="margin:10px 0 0">${Object.entries(APPEARANCES).map(([k, name]) => `<button class="tab ${k === appearance ? 'active' : ''}" onclick="setAppearance('${k}')">${name}</button>`).join('')}</div></div><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Prompt to Pan is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div>${readStepsSetting()}</div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a meal export from ChatGPT, Claude or another AI.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✦</div><div style="flex:1"><strong>Your AI</strong><div class="muted small" style="margin-top:4px">Used by Chat, Revise with AI and Ask AI. With an API key (AI accounts below) they answer inside the app; without one they open the AI's app.</div></div></div>${aiChoice()}<div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up the Gemini, ChatGPT, Claude or Grok app to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div>${inAndroidApp() ? `<div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in ChatGPT or Claude and come back, Prompt to Pan offers to import it. Android shows a notice each time it checks a new copy.</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div>` : ''}</div>${aiAccountsPanel()}<div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.${hasApi() ? ' AI API keys aren\'t included.' : ''}</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>${sharePanel()}`
 }
 
 // ---- Sharing the app ----
@@ -1400,7 +1411,8 @@ function copyPrompt() {
 
 // On Android, MainActivity opens any non-app link in the browser, or in the ChatGPT / Claude app if installed.
 function openUrl(url) {
-  if (window.MealkeeperAndroid) location.href = url;
+  if (window.MealkeeperAndroid && window.MealkeeperAndroid.openExternalUrl) window.MealkeeperAndroid.openExternalUrl(url);
+  else if (window.MealkeeperAndroid) location.href = url;
   else window.open(url, '_blank');
 }
 
@@ -1634,7 +1646,7 @@ function webWakeLock(want) {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (!inAndroidApp() && lastAwake && document.visibilityState === 'visible') webWakeLock(true);
+  if (!window.MealkeeperAndroid && lastAwake && document.visibilityState === 'visible') webWakeLock(true);
 });
 
 // ---- Startup ----

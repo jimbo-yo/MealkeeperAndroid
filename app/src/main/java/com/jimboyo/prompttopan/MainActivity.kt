@@ -717,6 +717,7 @@ class MainActivity : Activity() {
         private var lastRendererCrash = -RENDERER_RETRY_MS
         // The page refers to the AI apps by these keys; the packages are also listed under <queries> in the manifest.
         private val AI_APPS = mapOf(
+            "gemini" to AiApp("com.google.android.apps.bard", "Gemini", shareFillsMessageBox = false),
             "chatgpt" to AiApp("com.openai.chatgpt", "ChatGPT", shareFillsMessageBox = true),
             "claude" to AiApp("com.anthropic.claude", "Claude", shareFillsMessageBox = false),
             "grok" to AiApp("ai.x.grok", "Grok", shareFillsMessageBox = false)

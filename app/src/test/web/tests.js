@@ -2433,6 +2433,33 @@ test('web version supports Cook mode voice via Web Speech API, read-aloud fallba
   }
 });
 
+test('Gemini uses gemini-4-neon by default, strips models/ prefix, streams replies and runs save_meal tool calls', () => {
+  eq([Object.keys(AI_APIS)[0], AI_APIS.gemini.model], ['gemini', 'gemini-4-neon'], 'Gemini listed first with gemini-4-neon');
+  setMyAi('gemini');
+  go('ai');
+  assert(main().textContent.includes('New Gem') && main().textContent.includes('Open Gemini'), 'Gemini Gems setup shown');
+  bridge.keys.gemini = true;
+  refreshAiKeys();
+  loadModels('gemini');
+  let listReq = bridgeCalls('aiRequest').pop();
+  eq([listReq[2], listReq[3], listReq[4]], ['gemini', 'GET', '/v1/models']);
+  window.onAiDone(listReq[1], 200, JSON.stringify({data: [{id: 'models/gemini-4-neon'}, {id: 'models/gemini-3.6-flash'}, {id: 'models/text-embedding-004'}]}));
+  eq(aiModelLists.gemini, ['gemini-4-neon', 'gemini-3.6-flash'], 'models/ stripped and embeddings filtered');
+
+  newChat('gemini');
+  sendChat('Plan tacos', 'Plan tacos');
+  let req = bridgeCalls('aiRequest').pop();
+  eq([req[2], req[3], req[4], req[5].model], ['gemini', 'POST', '/v1/chat/completions', 'gemini-4-neon']);
+  let mealArg = JSON.stringify({name: 'Gemini Tacos', recipes: [{title: 'Quick tacos', ingredients: [], instructions: ['Fill tortillas.']}]});
+  window.onAiEvents(req[1], [
+    JSON.stringify({choices: [{delta: {content: 'Saving '}}]}),
+    JSON.stringify({choices: [{delta: {content: 'tacos!', tool_calls: [{index: 0, id: 'call_g1', function: {name: 'save_meal', arguments: mealArg.slice(0, 20)}}]}}]}),
+    JSON.stringify({choices: [{delta: {tool_calls: [{index: 0, function: {arguments: mealArg.slice(20)}}]}, finish_reason: 'tool_calls'}]})
+  ]);
+  window.onAiDone(req[1], 200, null);
+  eq([meals[0].name, chat.pending[0].role, chat.pending[0].tool_call_id], ['Gemini Tacos', 'tool', 'call_g1'], 'meal saved and tool result queued');
+});
+
 // ---- Report ----
 
 reset();

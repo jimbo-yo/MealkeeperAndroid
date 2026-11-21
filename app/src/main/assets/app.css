@@ -1769,3 +1769,39 @@ html.cooking body {
 .cook-dish-steps li {
   margin-bottom: 10px;
 }
+
+@media (min-width: 820px) {
+  .cook-top,
+  .cook-progress,
+  .cook-tl-bar,
+  .cook-timers,
+  .cook-voice-status,
+  .cook-body,
+  .cook-foot {
+    width: 100%;
+    max-width: 860px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .cook-step {
+    font-size: 32px;
+    line-height: 1.4;
+  }
+
+  .cook-task {
+    font-size: 34px;
+  }
+
+  .cook-sheet-bg {
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .cook-sheet {
+    max-width: 640px;
+    border-radius: 24px;
+    padding-bottom: 20px;
+  }
+}
