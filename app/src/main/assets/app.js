@@ -460,9 +460,9 @@ const AI_GUIDES = {
     newChat: 'https://gemini.google.com/app?q=',
     steps: [
       'Tap <strong>Copy instructions</strong> below.',
-      'Open <strong>gemini.google.com</strong> in a computer browser (the Gemini mobile app doesn’t let you create new Gems), open <strong>Explore Gems</strong> (or <strong>Gems</strong>) in the left sidebar, and click <strong>+ New Gem</strong> (for example “Meal planning”).',
-      'Paste into the Gem’s <strong>Instructions</strong> and click <strong>Save</strong>.',
-      'Plan your meals in chats with that Gem—once saved, it also syncs to the Gemini mobile app.'
+      'Open <strong>gemini.google.com</strong>, click the bottom-left <strong>Settings</strong> icon, go to <strong>Customize → Skills</strong>, and click <strong>Create</strong> (or <strong>+ New Skill</strong>).',
+      'Name it (for example “Prompt to Pan”), describe when to use it (“Export meals when I say send it to the pan”), paste into <strong>Instructions</strong>, and click <strong>Save</strong>.',
+      'Plan meals in any Gemini chat on desktop or mobile—the skill triggers automatically (or with <strong>/</strong> or <strong>@</strong>).'
     ]
   },
   chatgpt: {

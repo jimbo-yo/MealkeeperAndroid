@@ -2437,7 +2437,7 @@ test('Gemini uses gemini-4-neon by default, strips models/ prefix, streams repli
   eq([Object.keys(AI_APIS)[0], AI_APIS.gemini.model], ['gemini', 'gemini-4-neon'], 'Gemini listed first with gemini-4-neon');
   setMyAi('gemini');
   go('ai');
-  assert(main().textContent.includes('New Gem') && main().textContent.includes('Open Gemini'), 'Gemini Gems setup shown');
+  assert(main().textContent.includes('Customize → Skills') && main().textContent.includes('Open Gemini'), 'Gemini Skills setup shown');
   bridge.keys.gemini = true;
   refreshAiKeys();
   loadModels('gemini');
