@@ -804,6 +804,30 @@ function bindCookSwipe(el) {
     if (dx < 0 && cook.step < cookStepCount(c)) cookStep(1);
     else if (dx > 0 && cook.step > 0) cookStep(-1);
   }, {passive: true});
+  document.addEventListener('keydown', e => {
+    if (!cook) return;
+    let tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    let c = cookingState();
+    if (!c) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cookBack();
+    } else if (cook.sheet) {
+      return;
+    } else if (e.key === 'ArrowRight' || e.key === ' ') {
+      e.preventDefault();
+      if (cook.step < cookStepCount(c)) cookStep(1);
+      else closeCook();
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (cook.step > 0) cookStep(-1);
+    } else if (e.key === 'i' || e.key === 'I') {
+      cookSheet('ingredients');
+    } else if ((e.key === 'o' || e.key === 'O') && c.mode === 'timeline') {
+      cookSheet('overview');
+    }
+  });
 }
 
 function renderCookTimeline(el, m, bodyTop, sheetTop) {
@@ -929,7 +953,7 @@ function cookBack() {
   return true;
 }
 
-// ---- Voice: hands-free commands (Android app only; CookVoice.kt does the listening) ----
+// ---- Voice: hands-free commands (Android offline Vosk, or Web Speech API in browsers) ----
 
 // 'off', 'starting' (loading the speech model or asking for the microphone) or 'on'.
 let cookVoice = 'off',
@@ -937,9 +961,198 @@ let cookVoice = 'off',
   voiceProblem = '',
   flash = '';
 
-function hasCookVoice() {
+function hasAndroidCookVoice() {
   return !!(window.MealkeeperAndroid && window.MealkeeperAndroid.cookVoiceAvailable && window.MealkeeperAndroid.cookVoiceAvailable());
 }
+
+function webSpeechCtor() {
+  return !inAndroidApp() ? (window.SpeechRecognition || window.webkitSpeechRecognition || null) : null;
+}
+
+function hasWebCookVoice() {
+  return !!webSpeechCtor();
+}
+
+function hasWebReadAloud() {
+  return !inAndroidApp() && typeof window.speechSynthesis === 'object' && !!window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function';
+}
+
+function hasCookVoice() {
+  return hasAndroidCookVoice() || hasWebCookVoice();
+}
+
+// ---- Browser Web Speech fallback (Chrome, Edge, Safari) ----
+
+let webRec = null,
+  webRecWanted = false,
+  webRecRestart = null,
+  webSpeaking = false,
+  webSpeakingWords = new Set(),
+  webSpeakSeq = 0,
+  webSpeakTail = null;
+
+function webWords(text) {
+  return new Set(str(text).toLowerCase().split(/[^a-z]+/).filter(Boolean));
+}
+
+function startWebCookVoice() {
+  let Ctor = webSpeechCtor();
+  if (!Ctor) return window.onCookVoice('error', 'mic');
+  stopWebCookVoice();
+  webRecWanted = true;
+  let startedOnce = false;
+  let rec = new Ctor();
+  webRec = rec;
+  rec.continuous = true;
+  rec.interimResults = false;
+  rec.maxAlternatives = 3;
+  rec.lang = (navigator && navigator.language) || 'en-US';
+
+  rec.onstart = () => {
+    if (webRec !== rec || !webRecWanted) return;
+    if (!startedOnce) {
+      startedOnce = true;
+      window.onCookVoice('listening', '');
+    }
+  };
+
+  rec.onresult = e => {
+    if (webRec !== rec || !webRecWanted) return;
+    for (let k = e.resultIndex; k < e.results.length; k++) {
+      let res = e.results[k];
+      if (!res.isFinal) continue;
+      let picked = '';
+      for (let a = 0; a < res.length; a++) {
+        let phrase = str(res[a] && res[a].transcript).trim();
+        let tokens = phrase.split(/\s+/).filter(Boolean);
+        if (!tokens.length || tokens.length > 5) continue;
+        let cmd = parseCookCommand(phrase);
+        if (cmd) {
+          picked = phrase;
+          break;
+        }
+      }
+      if (!picked) continue;
+      if (webSpeaking) {
+        let cmdWordHit = str(picked).toLowerCase().split(/[^a-z]+/).some(w =>
+          COOK_COMMANDS.some(([, words]) => words.includes(w)) && webSpeakingWords.has(w)
+        );
+        if (cmdWordHit) continue;
+        webCookQuiet();
+      }
+      window.onCookVoice('heard', picked);
+      break;
+    }
+  };
+
+  rec.onerror = e => {
+    if (webRec !== rec || !webRecWanted) return;
+    let err = str(e && e.error);
+    if (err === 'no-speech' || err === 'aborted') return;
+    stopWebCookVoice();
+    let mapped = err === 'not-allowed' || err === 'service-not-allowed' ? 'denied'
+      : err === 'network' ? 'network'
+      : 'mic';
+    window.onCookVoice('error', mapped);
+  };
+
+  rec.onend = () => {
+    if (webRec !== rec) return;
+    if (!webRecWanted || !cook || document.visibilityState === 'hidden') return;
+    clearTimeout(webRecRestart);
+    webRecRestart = setTimeout(() => {
+      if (webRec !== rec || !webRecWanted || !cook) return;
+      try {
+        rec.start();
+      } catch (e) {
+        stopWebCookVoice();
+        window.onCookVoice('stopped', '');
+      }
+    }, 250);
+  };
+
+  try {
+    rec.start();
+  } catch (e) {
+    stopWebCookVoice();
+    window.onCookVoice('error', 'mic');
+  }
+}
+
+function stopWebCookVoice() {
+  webRecWanted = false;
+  clearTimeout(webRecRestart);
+  webRecRestart = null;
+  let rec = webRec;
+  webRec = null;
+  if (rec) {
+    rec.onstart = rec.onresult = rec.onerror = rec.onend = null;
+    try { rec.stop(); } catch (e) {}
+  }
+  webCookQuiet();
+}
+
+function webCookSpeak(text) {
+  if (!hasWebReadAloud() || !text) return;
+  clearTimeout(webSpeakTail);
+  webSpeakTail = null;
+  let seq = ++webSpeakSeq;
+  webSpeaking = true;
+  webSpeakingWords = webWords(text);
+  try {
+    window.speechSynthesis.cancel();
+    let u = new window.SpeechSynthesisUtterance(text);
+    u.lang = (navigator && navigator.language) || 'en-US';
+    let finish = immediate => {
+      if (seq !== webSpeakSeq) return;
+      if (immediate) {
+        webSpeaking = false;
+        webSpeakingWords = new Set();
+      } else {
+        clearTimeout(webSpeakTail);
+        webSpeakTail = setTimeout(() => {
+          if (seq !== webSpeakSeq) return;
+          webSpeaking = false;
+          webSpeakingWords = new Set();
+        }, 450);
+      }
+    };
+    u.onend = () => finish(false);
+    u.onerror = () => finish(true);
+    window.speechSynthesis.speak(u);
+  } catch (e) {
+    webSpeaking = false;
+    webSpeakingWords = new Set();
+  }
+}
+
+function webCookQuiet() {
+  webSpeakSeq++;
+  clearTimeout(webSpeakTail);
+  webSpeakTail = null;
+  webSpeaking = false;
+  webSpeakingWords = new Set();
+  if (hasWebReadAloud()) {
+    try { window.speechSynthesis.cancel(); } catch (e) {}
+  }
+}
+
+function readCurrentStepAloud() {
+  let c = cookingState();
+  if (!c || !hasWebReadAloud()) return;
+  let n = cookStepCount(c);
+  let text = cook.step >= n
+    ? (c.mode === 'timeline' ? 'All steps done. Time to serve.' : 'All steps done.')
+    : (c.mode === 'timeline' ? spokenTimelineStep(c.m, cook.step) : spokenStep(c.m, c.r, cook.step));
+  webCookSpeak(text);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && webRecWanted) {
+    stopWebCookVoice();
+    window.onCookVoice('stopped', '');
+  }
+});
 
 // The words a command can be said with. The recognizer only hears these (CookVoice's COMMAND_WORDS) plus harmless carrier words.
 const COOK_COMMANDS = [
@@ -964,10 +1177,15 @@ function parseCookCommand(text) {
 }
 
 function voiceButton() {
-  if (!hasCookVoice()) return '';
-  return cookVoice === 'off'
-    ? '<button class="outline cook-voice" onclick="toggleCookVoice()">Voice</button>'
-    : '<button class="primary cook-voice" onclick="toggleCookVoice()" aria-pressed="true">Voice on</button>';
+  if (hasCookVoice()) {
+    return cookVoice === 'off'
+      ? '<button class="outline cook-voice" onclick="toggleCookVoice()">Voice</button>'
+      : '<button class="primary cook-voice" onclick="toggleCookVoice()" aria-pressed="true">Voice on</button>';
+  }
+  if (hasWebReadAloud()) {
+    return '<button class="outline cook-read" onclick="readCurrentStepAloud()" aria-label="Read step aloud">🔊 Read</button>';
+  }
+  return '';
 }
 
 function voiceStatus(hasTimer, isTimeline) {
@@ -992,7 +1210,8 @@ function toggleCookVoice() {
   if (cookVoice !== 'off') return stopCookVoice(true);
   voiceProblem = '';
   cookVoice = 'starting';
-  window.MealkeeperAndroid.cookVoiceStart();
+  if (hasAndroidCookVoice()) window.MealkeeperAndroid.cookVoiceStart();
+  else startWebCookVoice();
   syncAwake();
   renderCook();
 }
@@ -1000,6 +1219,7 @@ function toggleCookVoice() {
 function stopCookVoice(render) {
   clearTimeout(window._cookFlash);
   if (cookVoice !== 'off' && window.MealkeeperAndroid && window.MealkeeperAndroid.cookVoiceStop) window.MealkeeperAndroid.cookVoiceStop();
+  stopWebCookVoice();
   cookVoice = 'off';
   heardCommand = '';
   flash = '';
@@ -1020,8 +1240,9 @@ window.onCookVoice = function(event, text) {
   } else if (event === 'error') {
     cookVoice = 'off';
     voiceProblem = {
-      denied: 'Voice control needs the microphone. Allow it when asked, or in the phone\'s app settings.',
-      model: 'Voice control couldn\'t load its speech model. Try reinstalling the app.'
+      denied: 'Voice control needs the microphone. Allow it when asked, or in your browser or phone settings.',
+      model: 'Voice control couldn\'t load its speech model. Try reinstalling the app.',
+      network: 'Voice control needs an internet connection in this browser.'
     }[text] || 'Voice control stopped: the microphone isn\'t available.';
     syncAwake();
     renderCook();
@@ -1098,11 +1319,15 @@ function runCookCommand(command) {
 }
 
 function speak(text) {
-  if (cookVoice === 'on' && text) window.MealkeeperAndroid.cookVoiceSpeak(text);
+  if (cookVoice !== 'on' || !text) return;
+  if (hasAndroidCookVoice()) window.MealkeeperAndroid.cookVoiceSpeak(text);
+  else webCookSpeak(text);
 }
 
 function quiet() {
-  if (cookVoice === 'on') window.MealkeeperAndroid.cookVoiceQuiet();
+  if (cookVoice !== 'on') return;
+  if (hasAndroidCookVoice()) window.MealkeeperAndroid.cookVoiceQuiet();
+  else webCookQuiet();
 }
 
 // Reads the current step aloud when voice is on and Settings asks for it (always, for "repeat").
@@ -1216,7 +1441,7 @@ function spokenTimelineIngredients(m, i) {
   return items.length ? prefix + items.join('. ') + '.' : '';
 }
 
-// Settings: only where voice control exists (the Android app).
+// Settings: wherever voice control exists (the Android app or a browser with Web Speech).
 function readStepsSetting() {
   if (!hasCookVoice()) return '';
   return `<div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">♪</div><div><strong>Read steps aloud</strong><div class="muted small" style="margin-top:5px">When voice control is on in Cook mode, each step is read out with its amounts. Talk over it to give the next command.</div></div></div><input class="toggle" type="checkbox" ${readSteps ? 'checked' : ''} onchange="setReadSteps(this.checked)"></div>`;

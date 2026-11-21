@@ -2351,6 +2351,81 @@ test('Cooking timeline opens full-screen meal Cook mode with live target time ov
   eq(cookEl().hidden, true, '"next" exits timeline Cook mode when done');
 });
 
+test('web version supports Cook mode voice via Web Speech API, read-aloud fallback, and keyboard navigation', () => {
+  let savedAndroid = window.MealkeeperAndroid,
+    savedSR = window.SpeechRecognition,
+    savedWebkitSR = window.webkitSpeechRecognition,
+    savedSynthDesc = Object.getOwnPropertyDescriptor(window, 'speechSynthesis'),
+    savedUtt = window.SpeechSynthesisUtterance;
+  let lastRec = null,
+    spokenWeb = [];
+  class FakeSR {
+    start() {
+      lastRec = this;
+      if (this.onstart) this.onstart();
+    }
+    stop() {
+      this.stopped = true;
+    }
+  }
+  try {
+    window.MealkeeperAndroid = undefined;
+    window.SpeechRecognition = FakeSR;
+    window.webkitSpeechRecognition = undefined;
+    window.SpeechSynthesisUtterance = function(t) { this.text = t; };
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        cancel() {},
+        speak(u) { spokenWeb.push(u.text); if (u.onend) u.onend(); }
+      }
+    });
+
+    openMeal(1);
+    go('settings');
+    assert(main().textContent.includes('Read steps aloud'), 'Read steps aloud shown on web when SpeechRecognition exists');
+    openCook(1);
+    assert(cookEl().querySelector('.cook-voice'), 'Voice button shown on web');
+    cookEl().querySelector('.cook-voice').click();
+    assert(lastRec && cookVoice === 'on', 'web SpeechRecognition started');
+
+    // Long conversation is ignored; short command advances step.
+    lastRec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'hey can you please pass me the next bowl over there'}], {isFinal: true})]});
+    assert(cookEl().textContent.includes('Step 1 of 5'), 'long chatter ignored');
+    lastRec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'next step'}], {isFinal: true})]});
+    assert(cookEl().textContent.includes('Step 2 of 5'), 'short web voice command advanced step');
+    lastRec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'repeat'}], {isFinal: true})]});
+    assert(spokenWeb.length === 1 && spokenWeb[0].startsWith('Step 2.'), 'web speechSynthesis read step');
+
+    // Keyboard shortcuts move steps and close sheets.
+    document.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowRight'}));
+    assert(cookEl().textContent.includes('Step 3 of 5'), 'ArrowRight advanced step');
+    document.dispatchEvent(new KeyboardEvent('keydown', {key: 'i'}));
+    assert(cookEl().querySelector('.cook-sheet'), '"i" opened ingredients');
+    document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+    assert(!cookEl().querySelector('.cook-sheet') && !cookEl().hidden, 'Escape closed sheet first');
+    closeCook();
+
+    // Without SpeechRecognition, browsers with speechSynthesis get a Read button.
+    window.SpeechRecognition = undefined;
+    openCook(1);
+    eq(cookEl().querySelector('.cook-voice'), null, 'no Voice button without SpeechRecognition');
+    let readBtn = cookEl().querySelector('.cook-read');
+    assert(readBtn, 'Read aloud fallback button shown');
+    readBtn.click();
+    assert(spokenWeb.length === 2 && spokenWeb[1].startsWith('Step 1.'), 'Read button speaks current step');
+    closeCook();
+  } finally {
+    stopWebCookVoice();
+    window.MealkeeperAndroid = savedAndroid;
+    window.SpeechRecognition = savedSR;
+    window.webkitSpeechRecognition = savedWebkitSR;
+    if (savedSynthDesc) Object.defineProperty(window, 'speechSynthesis', savedSynthDesc);
+    else delete window.speechSynthesis;
+    window.SpeechSynthesisUtterance = savedUtt;
+  }
+});
+
 // ---- Report ----
 
 reset();
