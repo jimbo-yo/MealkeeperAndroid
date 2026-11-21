@@ -275,7 +275,7 @@ class CookVoice(private val activity: Activity, private val js: (String) -> Unit
         private val COMMAND_WORDS = setOf(
             "next", "forward", "continue", "back", "previous", "repeat", "again", "read",
             "ingredients", "ingredient", "close", "hide", "stop", "quiet", "recipe", "exit",
-            "timer", "timers",
+            "timer", "timers", "overview", "timeline", "schedule",
         )
         // Harmless carrier words so natural phrases ("show the ingredients", "say that again", "start the timer")
         // don't count as [unk] tokens; they never trigger commands on their own.

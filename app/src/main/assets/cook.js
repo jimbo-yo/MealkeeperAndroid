@@ -482,8 +482,9 @@ function dismissCookTimer(id) {
 
 function openSystemTimer(seconds, label) {
   if (!window.MealkeeperAndroid || !window.MealkeeperAndroid.setTimer) return;
-  let c = cookingRecipe(),
-    msg = c ? `${c.r.title} (${label})` : label;
+  let c = cookingState(),
+    title = !c ? '' : c.mode === 'timeline' ? ((c.m.timeline[cook.step] && c.m.timeline[cook.step].task) || c.m.name) : c.r.title,
+    msg = title ? `${title} (${label})` : label;
   if (!window.MealkeeperAndroid.setTimer(seconds, msg)) notify('No clock app found to set a timer.');
 }
 
@@ -547,8 +548,7 @@ function timerBarHtml() {
   }).join('')}</div>`;
 }
 
-function stepTimersHtml(r, i) {
-  let timers = stepTimers(r.instructions[i] || '');
+function stepTimersHtmlFromList(timers) {
   if (!timers.length) return '';
   let hasClock = !!(window.MealkeeperAndroid && window.MealkeeperAndroid.setTimer);
   return `<div class="cook-step-timers">${timers.map(t =>
@@ -556,27 +556,153 @@ function stepTimersHtml(r, i) {
   ).join('')}</div>`;
 }
 
+function stepTimersHtml(r, i) {
+  return stepTimersHtmlFromList(stepTimers(r.instructions[i] || ''));
+}
+
+// Timers for a meal timeline step: the step's scheduled duration plus any distinct durations mentioned in details.
+function timelineStepTimers(t) {
+  let out = [],
+    seen = new Set();
+  if (t && t.duration > 0) {
+    let sec = Math.round(t.duration * 60);
+    seen.add(sec);
+    out.push({seconds: sec, label: fmtMinutes(t.duration)});
+  }
+  for (let extra of stepTimers((t && t.details) || '')) {
+    if (!seen.has(extra.seconds)) {
+      seen.add(extra.seconds);
+      out.push(extra);
+    }
+  }
+  return out;
+}
+
+// ---- Meal timeline helpers for Cook mode ----
+
+function timelineClock(m) {
+  let span = timelineSpan(m.timeline),
+    serve = clockMinutes(m.serveAt),
+    start = serve - span;
+  return {span, serve, start};
+}
+
+function timelineLinkedRecipe(m, t) {
+  return (t && t.recipeId && m.recipes.find(x => x.id === t.recipeId)) || null;
+}
+
+// Ingredients relevant to a timeline step: the linked recipe's ingredients (scaled), or merged across the meal for
+// meal-wide steps (e.g. "Prep everything").
+function timelineStepContext(m, t) {
+  let r = timelineLinkedRecipe(m, t);
+  if (r) {
+    let factor = servingsFactor(m, r);
+    return {
+      recipe: r,
+      factor,
+      ingredients: r.ingredients.map((ing, idx) => ({ing, factor, key: `${r.id}:${idx}`, recipeTitle: r.title}))
+    };
+  }
+  let byName = new Map(),
+    list = [];
+  m.recipes.forEach(rec => {
+    let factor = servingsFactor(m, rec);
+    rec.ingredients.forEach((ing, idx) => {
+      let key = `${rec.id}:${idx}`,
+        norm = ing.name.toLowerCase().trim(),
+        entry = {ing, factor, key, recipeTitle: rec.title};
+      list.push(entry);
+      if (!byName.has(norm)) byName.set(norm, []);
+      byName.get(norm).push(entry);
+    });
+  });
+  // For inline highlighting on meal-wide steps, combine same-named ingredients only when units match; otherwise
+  // highlight without an ambiguous single-recipe quantity.
+  let matchable = [];
+  for (let [, group] of byName) {
+    if (group.length === 1) {
+      let {ing, factor} = group[0];
+      matchable.push({...ing, _factor: factor});
+    } else {
+      let units = new Set(group.map(g => str(g.ing.unit).trim().toLowerCase()));
+      let allNum = group.every(g => typeof g.ing.quantity === 'number');
+      if (allNum && units.size === 1) {
+        let total = group.reduce((sum, g) => sum + g.ing.quantity * g.factor, 0);
+        matchable.push({name: group[0].ing.name, quantity: total, unit: group[0].ing.unit, notes: '', _factor: 1});
+      } else {
+        matchable.push({name: group[0].ing.name, quantity: null, unit: '', notes: '', _factor: 1});
+      }
+    }
+  }
+  return {recipe: null, factor: 1, ingredients: list, matchable};
+}
+
+function markedTimelineStep(m, t) {
+  let ctx = timelineStepContext(m, t),
+    raw = (t && t.details) || '',
+    text = ctx.recipe ? scaleStepText(raw, ctx.recipe, ctx.factor) : raw,
+    ings = ctx.recipe ? ctx.recipe.ingredients : ctx.matchable,
+    out = '',
+    pos = 0;
+  for (let h of mentions(text, ings)) {
+    let f = ctx.recipe ? ctx.factor : (h.ing._factor || 1),
+      amount = hasLeadingQty(text.slice(0, h.start)) ? '' : scaledQty(h.ing.quantity, h.ing.unit, f);
+    out += escapeHtml(text.slice(pos, h.start)) + `<mark>${amount ? `<b>${escapeHtml(amount)}</b> ` : ''}${escapeHtml(text.slice(h.start, h.end))}</mark>`;
+    pos = h.end;
+  }
+  return out + escapeHtml(text.slice(pos));
+}
+
+function timelineMatchedEntries(m, t) {
+  let ctx = timelineStepContext(m, t),
+    raw = ((t && t.task) || '') + ' ' + ((t && t.details) || ''),
+    ings = ctx.recipe ? ctx.recipe.ingredients : ctx.matchable,
+    hitNames = new Set(mentions(raw, ings).map(h => h.ing.name.toLowerCase().trim()));
+  return ctx.ingredients.filter(e => hitNames.has(e.ing.name.toLowerCase().trim()));
+}
+
+function setCookServeAt(v) {
+  let c = cookingState();
+  if (!c || c.mode !== 'timeline' || !/^\d{1,2}:\d{2}$/.test(v)) return;
+  c.m.serveAt = v;
+  render();
+  renderCook();
+}
+
 // ---- Cook mode ----
 
-// null, or {meal, recipe, keeper, step, added: {ingredient index: true}, sheet: bool, timers: [...]}.
+// null, or {mode: 'recipe'|'timeline', meal, recipe, keeper, step, added: {key: true}, sheet: false|'ingredients'|'overview'|'dish', timers: [...]}.
 let cook = null,
   cookSwipeBound = false;
 
-function cookingRecipe() {
+function cookingState() {
   if (!cook) return null;
+  if (cook.mode === 'timeline') {
+    let m = meals.find(x => x.id === cook.meal);
+    return m && m.timeline.length ? {mode: 'timeline', m} : null;
+  }
   if (cook.keeper != null) {
     let k = keeperById(cook.keeper);
-    return k ? {m: keeperMeal(k), r: k.recipe} : null;
+    return k ? {mode: 'recipe', m: keeperMeal(k), r: k.recipe} : null;
   }
   let m = meals.find(x => x.id === cook.meal),
     r = m && m.recipes[cook.recipe];
-  return r ? {m, r} : null;
+  return r ? {mode: 'recipe', m, r} : null;
+}
+
+function cookingRecipe() {
+  let c = cookingState();
+  return c && c.mode === 'recipe' ? c : null;
+}
+
+function cookStepCount(c) {
+  return c.mode === 'timeline' ? c.m.timeline.length : c.r.instructions.length;
 }
 
 function startCookSession(session) {
   clearTimeout(window._cookFlash);
   clearTimerTick();
-  cook = {...session, step: 0, added: {}, sheet: false, timers: []};
+  cook = {mode: 'recipe', step: 0, ...session, added: {}, sheet: false, timers: []};
   voiceProblem = '';
   flash = '';
   heardCommand = '';
@@ -587,13 +713,20 @@ function startCookSession(session) {
 function openCook(i) {
   let m = currentMeal();
   if (!m || !m.recipes[i]) return;
-  startCookSession({meal: m.id, recipe: i, keeper: null});
+  startCookSession({mode: 'recipe', meal: m.id, recipe: i, keeper: null});
 }
 
 function openCookKeeper(id) {
   let k = keeperById(id);
   if (!k) return;
-  startCookSession({meal: null, recipe: null, keeper: k.id});
+  startCookSession({mode: 'recipe', meal: null, recipe: null, keeper: k.id});
+}
+
+function openCookTimeline(startStep = 0) {
+  let m = currentMeal();
+  if (!m || !m.timeline.length) return;
+  let step = Math.min(m.timeline.length - 1, Math.max(0, startStep));
+  startCookSession({mode: 'timeline', meal: m.id, recipe: null, keeper: null, step});
 }
 
 function closeCook() {
@@ -611,9 +744,9 @@ function closeCook() {
 }
 
 function cookGoTo(step) {
-  let c = cookingRecipe();
+  let c = cookingState();
   if (!c) return;
-  cook.step = Math.min(c.r.instructions.length, Math.max(0, step));
+  cook.step = Math.min(cookStepCount(c), Math.max(0, step));
   cook.sheet = false;
   renderCook(true);
   speakStep();
@@ -626,7 +759,7 @@ function cookStep(delta) {
 
 function cookSheet(open) {
   if (!cook) return;
-  cook.sheet = open;
+  cook.sheet = open === true ? 'ingredients' : open || false;
   renderCook();
 }
 
@@ -637,10 +770,11 @@ function toggleAdded(k) {
   renderCook();
 }
 
-function cookIngredientRow(r, ing, factor, large) {
-  let k = r.ingredients.indexOf(ing),
-    got = !!cook.added[k];
-  return `<button class="cook-ing${large ? ' large' : ''}${got ? ' got' : ''}" onclick="toggleAdded(${k})" aria-pressed="${got}"><span class="amt">${escapeHtml(scaledQty(ing.quantity, ing.unit, factor))}</span><span>${escapeHtml(ing.name)}${ing.notes ? ` <span class="muted">(${escapeHtml(ing.notes)})</span>` : ''}</span></button>`;
+function cookIngredientRow(r, ing, factor, large, key) {
+  let k = key != null ? key : r.ingredients.indexOf(ing),
+    got = !!cook.added[k],
+    arg = typeof k === 'string' ? `'${escapeHtml(k)}'` : k;
+  return `<button class="cook-ing${large ? ' large' : ''}${got ? ' got' : ''}" onclick="toggleAdded(${arg})" aria-pressed="${got}"><span class="amt">${escapeHtml(scaledQty(ing.quantity, ing.unit, factor))}</span><span>${escapeHtml(ing.name)}${ing.notes ? ` <span class="muted">(${escapeHtml(ing.notes)})</span>` : ''}</span></button>`;
 }
 
 // Horizontal swipe on the step body moves between steps without needing buttons.
@@ -665,30 +799,100 @@ function bindCookSwipe(el) {
     let dx = e.changedTouches[0].clientX - startX,
       dy = e.changedTouches[0].clientY - startY;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    let c = cookingRecipe();
+    let c = cookingState();
     if (!c) return;
-    if (dx < 0 && cook.step < c.r.instructions.length) cookStep(1);
+    if (dx < 0 && cook.step < cookStepCount(c)) cookStep(1);
     else if (dx > 0 && cook.step > 0) cookStep(-1);
   }, {passive: true});
 }
 
+function renderCookTimeline(el, m, bodyTop, sheetTop) {
+  let {span, serve, start} = timelineClock(m),
+    n = m.timeline.length,
+    i = cook.step,
+    done = i >= n,
+    t = done ? null : m.timeline[i],
+    linked = t ? timelineLinkedRecipe(m, t) : null,
+    linkedIdx = linked ? m.recipes.indexOf(linked) : -1,
+    hasAnyIngredients = m.recipes.some(r => r.ingredients.length);
+
+  let body = done
+    ? `<div class="cook-finish"><h2>All steps done</h2><p class="subhead">Time to serve! Target serve time: ${escapeHtml(fmtClock(serve))}.</p></div>`
+    : `<div class="cook-step-head"><span>Step ${i + 1} of ${n} · ${escapeHtml(fmtClock(start + t.offset))}</span>${t.duration ? `<span class="cook-serves">${escapeHtml(fmtMinutes(t.duration))}</span>` : ''}</div>
+       ${linked ? `<div class="cook-dish-tag">${escapeHtml(linked.icon)} ${escapeHtml(linked.title)}</div>` : ''}
+       <h2 class="cook-task${flashed('repeat')}">${escapeHtml(t.task)}</h2>
+       ${t.details ? `<p class="cook-step${flashed('repeat')}">${markedTimelineStep(m, t)}</p>` : ''}
+       ${stepTimersHtmlFromList(timelineStepTimers(t))}
+       <div class="divider"></div>
+       <p class="cook-next">${i + 1 < n ? `<strong>Next (${escapeHtml(fmtClock(start + m.timeline[i + 1].offset))}):</strong> ${escapeHtml(m.timeline[i + 1].task)}` : `<strong>Last step — serve at ${escapeHtml(fmtClock(serve))}.</strong>`}</p>
+       <div class="cook-actions-row">${hasAnyIngredients ? `<button class="text-btn cook-show${flashed('ingredients', 'close')}" onclick="cookSheet('ingredients')">Show ingredients</button>` : ''}${linked && linked.instructions.length ? `<button class="text-btn cook-show" onclick="cookSheet('dish')">View dish steps</button>` : ''}</div>`;
+
+  let sheet = '';
+  if (cook.sheet === 'ingredients') {
+    let uses = done ? [] : timelineMatchedEntries(m, t);
+    let restHtml = linked
+      ? `<h3>${escapeHtml(linked.icon)} ${escapeHtml(linked.title)}</h3>${linked.ingredients.map((x, idx) => cookIngredientRow(linked, x, servingsFactor(m, linked), false, `${linked.id}:${idx}`)).join('')}`
+      : m.recipes.filter(r => r.ingredients.length).map(r => `<h3>${escapeHtml(r.icon)} ${escapeHtml(r.title)}</h3>${r.ingredients.map((x, idx) => cookIngredientRow(r, x, servingsFactor(m, r), false, `${r.id}:${idx}`)).join('')}`).join('');
+    sheet = `<div class="cook-sheet-bg" onclick="if(event.target===this)cookSheet(false)"><div class="cook-sheet" role="dialog" aria-label="Ingredients">
+      ${uses.length ? `<h3>For step ${i + 1}</h3>${uses.map(e => cookIngredientRow(null, e.ing, e.factor, true, e.key)).join('')}` : ''}
+      ${restHtml}
+      <p class="muted small">Tap an ingredient once it's in.</p>
+      <button class="secondary" onclick="cookSheet(false)">Close</button></div></div>`;
+  } else if (cook.sheet === 'overview') {
+    let hasAlarm = !!(window.MealkeeperAndroid && window.MealkeeperAndroid.setAlarm);
+    sheet = `<div class="cook-sheet-bg" onclick="if(event.target===this)cookSheet(false)"><div class="cook-sheet" role="dialog" aria-label="Meal overview">
+      <h3>Meal timeline overview</h3>
+      <p class="muted small" style="margin:0 0 10px">Start at <strong>${escapeHtml(fmtClock(start))}</strong> · serve at <strong>${escapeHtml(fmtClock(serve))}</strong> · ${escapeHtml(fmtMinutes(span))} total</p>
+      <div class="cook-overview-serve"><label class="field-label" style="margin:0" for="cook-serve-at">Target serving time</label><input id="cook-serve-at" class="field" type="time" value="${escapeHtml(m.serveAt)}" onchange="setCookServeAt(this.value)"></div>
+      ${hasAlarm ? `<button class="secondary" style="margin:0 0 12px" onclick="setStartAlarm()">⏰ Set alarm for ${escapeHtml(fmtClock(start))}</button>` : ''}
+      <div class="cook-overview-list">${m.timeline.map((step, k) => {
+        let dish = timelineLinkedRecipe(m, step);
+        return `<button type="button" class="cook-overview-row${k === i ? ' now' : k < i ? ' done' : ''}" onclick="cookGoTo(${k})"><span class="cook-ov-time">${escapeHtml(fmtClock(start + step.offset))}</span><span class="cook-ov-main"><strong>${escapeHtml(step.task)}</strong>${dish || step.duration ? `<span class="muted small">${escapeHtml([dish && dish.title, step.duration && fmtMinutes(step.duration)].filter(Boolean).join(' · '))}</span>` : ''}</span></button>`;
+      }).join('')}<div class="cook-overview-row serve-row"><span class="cook-ov-time">${escapeHtml(fmtClock(serve))}</span><span class="cook-ov-main"><strong>Serve</strong><span class="muted small">Everything ready</span></span></div></div>
+      <button class="secondary" onclick="cookSheet(false)">Close</button></div></div>`;
+  } else if (cook.sheet === 'dish' && linked) {
+    let factor = servingsFactor(m, linked);
+    sheet = `<div class="cook-sheet-bg" onclick="if(event.target===this)cookSheet(false)"><div class="cook-sheet" role="dialog" aria-label="${escapeHtml(linked.title)}">
+      <h3>${escapeHtml(linked.icon)} ${escapeHtml(linked.title)}</h3>
+      <ol class="cook-dish-steps">${linked.instructions.map(s => `<li>${escapeHtml(scaleStepText(s, linked, factor))}</li>`).join('')}</ol>
+      ${linkedIdx >= 0 ? `<button class="primary" style="width:100%;justify-content:center;margin-top:10px" onclick="openCook(${linkedIdx})">Cook just this dish</button>` : ''}
+      <button class="secondary" onclick="cookSheet(false)">Close</button></div></div>`;
+  }
+
+  let hasTimers = !!(cook.timers.length || (t && timelineStepTimers(t).length));
+  el.innerHTML = `<div class="cook-top"><button class="outline" onclick="closeCook()">Exit</button><strong class="cook-title">${escapeHtml(m.name)}</strong>${voiceButton()}</div>
+    <div class="cook-progress" aria-label="Meal timeline steps">${m.timeline.map((_, k) => `<button type="button" class="cook-seg" onclick="cookGoTo(${k})" aria-label="Step ${k + 1} of ${n}"${k === i ? ' aria-current="step"' : ''}><i class="${k < i ? 'done' : k === i ? 'now' : ''}"></i></button>`).join('')}</div>
+    <div class="cook-tl-bar"><span>Start <strong>${escapeHtml(fmtClock(start))}</strong> · Serve <strong>${escapeHtml(fmtClock(serve))}</strong></span><button type="button" class="outline cook-tl-ov-btn${flashed('overview')}" onclick="cookSheet('overview')">Overview</button></div>
+    ${timerBarHtml()}
+    ${voiceStatus(hasTimers, true)}
+    <div class="cook-body" id="cook-body">${body}</div>
+    <div class="cook-foot"><button class="outline${i > 0 ? flashed('back') : ''}" onclick="cookStep(-1)" ${i === 0 ? 'disabled' : ''}>Back</button><button class="primary${flashed('next')}" onclick="${done ? 'closeCook()' : 'cookStep(1)'}">${done ? 'Back to timeline' : i + 1 < n ? 'Next step' : 'Finish'}</button></div>
+    ${sheet}`;
+  let nextBody = document.getElementById('cook-body'),
+    nextSheet = el.querySelector('.cook-sheet');
+  if (nextBody) nextBody.scrollTop = bodyTop;
+  if (nextSheet) nextSheet.scrollTop = sheetTop;
+}
+
 function renderCook(resetBodyScroll = false) {
   let el = document.getElementById('cook'),
-    c = cookingRecipe();
+    c = cookingState();
   if (!c) return closeCook();
   bindCookSwipe(el);
   let prevBody = document.getElementById('cook-body'),
     prevSheet = el.querySelector('.cook-sheet'),
     bodyTop = resetBodyScroll ? 0 : (prevBody ? prevBody.scrollTop : 0),
     sheetTop = prevSheet ? prevSheet.scrollTop : 0;
+  document.documentElement.classList.add('cooking');
+  el.hidden = false;
+  if (c.mode === 'timeline') return renderCookTimeline(el, c.m, bodyTop, sheetTop);
+
   let {m, r} = c,
     n = r.instructions.length,
     i = cook.step,
     factor = servingsFactor(m, r),
     s = servingsOf(m, r),
     done = i >= n;
-  document.documentElement.classList.add('cooking');
-  el.hidden = false;
   let body = done
     ? `<div class="cook-finish"><h2>All steps done</h2><p class="subhead">Enjoy it.</p></div>`
     : `<div class="cook-step-head"><span>Step ${i + 1} of ${n}</span>${s ? `<span class="cook-serves">Serves ${s}</span>` : ''}</div>
@@ -696,17 +900,18 @@ function renderCook(resetBodyScroll = false) {
        ${stepTimersHtml(r, i)}
        <div class="divider"></div>
        <p class="cook-next">${i + 1 < n ? `<strong>Next:</strong> ${escapeHtml(scaleStepText(r.instructions[i + 1], r, factor))}` : '<strong>Last step.</strong>'}</p>
-       ${r.ingredients.length ? `<button class="text-btn cook-show${flashed('ingredients', 'close')}" onclick="cookSheet(true)">Show ingredients</button>` : ''}`;
+       ${r.ingredients.length ? `<button class="text-btn cook-show${flashed('ingredients', 'close')}" onclick="cookSheet('ingredients')">Show ingredients</button>` : ''}`;
   let uses = done ? [] : stepIngredients(r, i);
   let sheet = !cook.sheet ? '' : `<div class="cook-sheet-bg" onclick="if(event.target===this)cookSheet(false)"><div class="cook-sheet" role="dialog" aria-label="Ingredients">
        ${uses.length ? `<h3>For step ${i + 1}</h3>${uses.map(x => cookIngredientRow(r, x, factor, true)).join('')}` : ''}
        <h3>${uses.length ? 'Everything in this recipe' : 'Ingredients'}</h3>${r.ingredients.map(x => cookIngredientRow(r, x, factor, false)).join('')}
        <p class="muted small">Tap an ingredient once it's in.</p>
        <button class="secondary" onclick="cookSheet(false)">Close</button></div></div>`;
+  let hasTimers = !!(cook.timers.length || (i < n && stepTimers(r.instructions[i]).length));
   el.innerHTML = `<div class="cook-top"><button class="outline" onclick="closeCook()">Exit</button><strong class="cook-title">${escapeHtml(r.title)}</strong>${voiceButton()}</div>
     <div class="cook-progress" aria-label="Recipe steps">${r.instructions.map((_, k) => `<button type="button" class="cook-seg" onclick="cookGoTo(${k})" aria-label="Step ${k + 1} of ${n}"${k === i ? ' aria-current="step"' : ''}><i class="${k < i ? 'done' : k === i ? 'now' : ''}"></i></button>`).join('')}</div>
     ${timerBarHtml()}
-    ${voiceStatus(r, i)}
+    ${voiceStatus(hasTimers, false)}
     <div class="cook-body" id="cook-body">${body}</div>
     <div class="cook-foot"><button class="outline${i > 0 ? flashed('back') : ''}" onclick="cookStep(-1)" ${i === 0 ? 'disabled' : ''}>Back</button><button class="primary${flashed('next')}" onclick="${done ? 'closeCook()' : 'cookStep(1)'}">${done ? 'Back to recipe' : i + 1 < n ? 'Next step' : 'Finish'}</button></div>
     ${sheet}`;
@@ -742,6 +947,7 @@ const COOK_COMMANDS = [
   ['back', ['back', 'previous']],
   ['repeat', ['repeat', 'again', 'read']],
   ['ingredients', ['ingredients', 'ingredient']],
+  ['overview', ['overview', 'timeline', 'schedule']],
   ['close', ['close', 'hide']],
   ['stop', ['stop', 'quiet']],
   ['timer', ['timer', 'timers']],
@@ -764,14 +970,16 @@ function voiceButton() {
     : '<button class="primary cook-voice" onclick="toggleCookVoice()" aria-pressed="true">Voice on</button>';
 }
 
-function voiceStatus(r, i) {
+function voiceStatus(hasTimer, isTimeline) {
   if (voiceProblem) return `<p class="cook-voice-status problem" role="alert">${escapeHtml(voiceProblem)}</p>`;
   if (cookVoice === 'off') return '';
-  let hasTimer = !!(cook && (cook.timers.length || (r && i < r.instructions.length && stepTimers(r.instructions[i]).length)));
+  let hints = ['“next”', '“back”', '“repeat”', '“ingredients”'];
+  if (isTimeline) hints.push('“overview”');
+  if (hasTimer) hints.push('“timer”');
+  hints.push(isTimeline ? '“exit”' : '“recipe”');
   let text = cookVoice === 'starting' ? 'Getting voice control ready…'
     : heardCommand ? `Heard “${heardCommand}”`
-    : hasTimer ? 'Listening. Say “next”, “back”, “repeat”, “ingredients”, “timer” or “recipe”.'
-    : 'Listening. Say “next”, “back”, “repeat”, “ingredients” or “recipe”.';
+    : `Listening. Say ${hints.slice(0, -1).join(', ')} or ${hints[hints.length - 1]}.`;
   return `<p class="cook-voice-status${heardCommand ? ' heard' : ''}" role="status">${escapeHtml(text)}</p>`;
 }
 
@@ -827,9 +1035,10 @@ window.onCookVoice = function(event, text) {
 };
 
 function runCookCommand(command) {
-  let c = cookingRecipe();
+  let c = cookingState();
   if (!command || !c) return;
-  // With the ingredients list open, "back" closes it rather than going to the previous step.
+  let total = cookStepCount(c);
+  // With a sheet open, "back" closes it rather than going to the previous step.
   if (command === 'back' && cook.sheet) command = 'close';
   heardCommand = command;
   flash = command;
@@ -840,15 +1049,21 @@ function runCookCommand(command) {
     if (cook) renderCook();
   }, 1500);
   if (command === 'next') {
-    if (cook.step < c.r.instructions.length) return cookStep(1);
+    if (cook.step < total) return cookStep(1);
     return closeCook();
   } else if (command === 'back') {
     if (cook.step > 0) return cookStep(-1);
   } else if (command === 'repeat') {
     speakStep(true);
   } else if (command === 'ingredients') {
-    cook.sheet = true;
-    speak(spokenIngredients(c.m, c.r, cook.step));
+    cook.sheet = 'ingredients';
+    speak(c.mode === 'timeline' ? spokenTimelineIngredients(c.m, cook.step) : spokenIngredients(c.m, c.r, cook.step));
+  } else if (command === 'overview') {
+    if (c.mode === 'timeline') {
+      cook.sheet = 'overview';
+      let {start, serve} = timelineClock(c.m);
+      speak(`Start at ${fmtClock(start)}, serve at ${fmtClock(serve)}.`);
+    }
   } else if (command === 'close') {
     cook.sheet = false;
     quiet();
@@ -861,7 +1076,9 @@ function runCookCommand(command) {
       if (!cook.timers.length) clearTimerTick();
       quiet();
     } else {
-      let offers = cook.step < c.r.instructions.length ? stepTimers(c.r.instructions[cook.step]) : [];
+      let offers = cook.step < total
+        ? (c.mode === 'timeline' ? timelineStepTimers(c.m.timeline[cook.step]) : stepTimers(c.r.instructions[cook.step]))
+        : [];
       let nextOffer = offers.find(o => !cook.timers.some(t => t.step === cook.step + 1 && t.totalSeconds === o.seconds)) || offers[0];
       if (nextOffer) {
         startCookTimer(nextOffer.seconds, nextOffer.label);
@@ -890,10 +1107,11 @@ function quiet() {
 
 // Reads the current step aloud when voice is on and Settings asks for it (always, for "repeat").
 function speakStep(asked) {
-  let c = cookingRecipe();
+  let c = cookingState();
   if (!c || cookVoice !== 'on' || !(readSteps || asked)) return;
-  let n = c.r.instructions.length;
-  speak(cook.step >= n ? 'All steps done.' : spokenStep(c.m, c.r, cook.step));
+  let n = cookStepCount(c);
+  if (cook.step >= n) return speak(c.mode === 'timeline' ? 'All steps done. Time to serve.' : 'All steps done.');
+  speak(c.mode === 'timeline' ? spokenTimelineStep(c.m, cook.step) : spokenStep(c.m, c.r, cook.step));
 }
 
 const SPOKEN_FRACTIONS = {'½': 'a half', '¼': 'a quarter', '¾': 'three quarters', '⅓': 'a third', '⅔': 'two thirds', '⅛': 'an eighth', '⅜': 'three eighths', '⅝': 'five eighths', '⅞': 'seven eighths'};
@@ -956,6 +1174,45 @@ function spokenIngredients(m, r, stepIndex) {
     list = uses.length ? uses : r.ingredients,
     prefix = uses.length ? `For step ${stepIndex + 1}: ` : 'Ingredients: ',
     items = list.map(x => [spokenAmount(x.quantity, x.unit, factor), x.name].filter(Boolean).join(' ') + (x.notes ? `, ${x.notes}` : ''));
+  return items.length ? prefix + items.join('. ') + '.' : '';
+}
+
+function spokenTimelineStep(m, i) {
+  let t = m.timeline[i];
+  if (!t) return '';
+  let {start} = timelineClock(m),
+    ctx = timelineStepContext(m, t),
+    raw = t.details || '',
+    text = ctx.recipe ? scaleStepText(raw, ctx.recipe, ctx.factor) : raw,
+    ings = ctx.recipe ? ctx.recipe.ingredients : ctx.matchable,
+    out = '',
+    pos = 0;
+  for (let h of mentions(text, ings)) {
+    let f = ctx.recipe ? ctx.factor : (h.ing._factor || 1),
+      amount = hasLeadingQty(text.slice(0, h.start)) ? '' : spokenAmount(h.ing.quantity, h.ing.unit, f);
+    out += text.slice(pos, h.start) + (amount ? amount + ' ' : '') + text.slice(h.start, h.end);
+    pos = h.end;
+  }
+  let body = (out + text.slice(pos))
+    .replace(/(\d+)\s*°\s*F\b/gi, '$1 degrees')
+    .replace(/(\d+)\s*°\s*C\b/gi, '$1 degrees Celsius')
+    .replace(/(\d+)\s*°(?!\s*[FC])/g, '$1 degrees')
+    .replace(new RegExp(`(${STEP_NUM_ATOM})[ \\t]+(${SCALE_UNIT_RE})(?![A-Za-z0-9-])`, 'gi'), (full, n, u) => {
+      let v = parseStepNum(n);
+      return v > 0 ? spokenAmount(v, u, 1) : full;
+    })
+    .replace(/(\d+)\s*[–—-]\s*(\d+)/g, '$1 to $2');
+  let head = `Step ${i + 1}, at ${fmtClock(start + t.offset)}. ${ctx.recipe ? ctx.recipe.title + ': ' : ''}${t.task}.`;
+  return body ? `${head} ${body}` : head;
+}
+
+function spokenTimelineIngredients(m, i) {
+  let t = i != null && i < m.timeline.length ? m.timeline[i] : null,
+    uses = t ? timelineMatchedEntries(m, t) : [],
+    ctx = t ? timelineStepContext(m, t) : null,
+    list = uses.length ? uses : (ctx ? ctx.ingredients : []),
+    prefix = uses.length ? `For step ${i + 1}: ` : 'Ingredients: ',
+    items = list.map(e => [spokenAmount(e.ing.quantity, e.ing.unit, e.factor), e.ing.name].filter(Boolean).join(' ') + (e.ing.notes ? `, ${e.ing.notes}` : ''));
   return items.length ? prefix + items.join('. ') + '.' : '';
 }
 

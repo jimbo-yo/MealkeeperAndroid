@@ -2308,6 +2308,49 @@ test('progress segments jump directly to steps and keepers support scaling and C
   assert(!cookEl().hidden && cookEl().textContent.includes('Serves 4'), 'keeper opens in Cook mode with chosen servings');
 });
 
+test('Cooking timeline opens full-screen meal Cook mode with live target time overview, timers, ingredients and voice', () => {
+  bridge.cookVoice = true;
+  openMeal(1);
+  go('timeline');
+  let startBtn = main().querySelector('.cook-start');
+  assert(startBtn && startBtn.textContent.includes('Start cooking meal'), 'Start cooking meal button shown on timeline');
+  startBtn.click();
+  assert(!cookEl().hidden && cookEl().textContent.includes('Step 1 of 6'), cookEl().textContent);
+  assert(cookEl().textContent.includes('5:35 PM') && cookEl().textContent.includes('6:30 PM'), 'shows start and serve clock times');
+  assert(cookEl().querySelector('.cook-timer-start').textContent.includes('10 min'), 'offers step duration timer');
+
+  // Advance to Step 2 (linked to rigatoni): highlights scaled recipe ingredients and offers dish steps.
+  cookStep(1);
+  assert(cookEl().textContent.includes('Sausage & pepper rigatoni'), 'shows linked dish badge');
+  assert(cookEl().querySelector('.cook-step mark'), 'highlights linked recipe ingredients in timeline step');
+  assert(cookEl().querySelector('.cook-timer-start').textContent.includes('30 min'), 'offers 30 min timer');
+
+  // Overview sheet lets user change target serving time and jump to any step.
+  cookEl().querySelector('.cook-voice').click();
+  window.onCookVoice('listening', '');
+  window.onCookVoice('heard', 'overview');
+  assert(cookEl().querySelector('.cook-overview-list'), 'voice "overview" opened overview sheet');
+  setCookServeAt('19:00');
+  assert(cookEl().textContent.includes('6:05 PM') && cookEl().textContent.includes('7:00 PM'), 'changing serve time updates times live');
+  cookEl().querySelectorAll('.cook-overview-row')[3].click();
+  assert(cookEl().textContent.includes('Step 4 of 6') && cookEl().textContent.includes('Boil pasta'), 'tapping overview row jumped to step 4');
+
+  // Voice "timer" starts the timeline step duration timer, "ingredients" opens sheet and Back closes sheet first.
+  window.onCookVoice('heard', 'start the timer');
+  eq(cook.timers.length, 1, 'timer started from timeline step');
+  window.onCookVoice('heard', 'ingredients');
+  assert(cookEl().querySelector('.cook-sheet') && cookEl().querySelector('.cook-sheet').textContent.includes('For step 4'), 'step ingredients sheet opened');
+  eq([handleBack(), !!cookEl().querySelector('.cook-sheet'), !cookEl().hidden], [true, false, true], 'Back closes sheet first');
+
+  // View dish steps sheet & finish screen.
+  cookSheet('dish');
+  assert(cookEl().querySelector('.cook-dish-steps'), 'dish steps sheet shown');
+  cookGoTo(6);
+  assert(cookEl().textContent.includes('All steps done') && cookEl().textContent.includes('7:00 PM'), 'finish screen shows serve time');
+  window.onCookVoice('heard', 'next');
+  eq(cookEl().hidden, true, '"next" exits timeline Cook mode when done');
+});
+
 // ---- Report ----
 
 reset();
