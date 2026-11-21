@@ -263,8 +263,10 @@ function showKeeper(id) {
   if (!k) return closeModal();
   recipeOpen = true;
   syncAwake();
-  let r = k.recipe, note = [`Kept ${new Date(k.savedAt).toLocaleDateString()}`, k.lastMade && `last added to a meal ${new Date(k.lastMade).toLocaleDateString()}`].filter(Boolean).join(' · ');
-  openModal(`<div class="eyebrow">KEEPER</div><h2>${escapeHtml(r.icon)} ${escapeHtml(r.title)}</h2>${recipeBody(r)}<p class="muted small">${escapeHtml(note)}</p><button class="text-btn danger" style="margin-top:6px" onclick="confirmDeleteKeeper(${k.id})">Delete this keeper</button><div class="modal-foot"><button class="outline" onclick="closeModal()">Done</button><button class="primary" onclick="addToMealModal(${k.id})">＋ Add to a meal</button></div>`);
+  let r = k.recipe,
+    factor = servingsFactor(keeperMeal(k), r),
+    note = [`Kept ${new Date(k.savedAt).toLocaleDateString()}`, k.lastMade && `last added to a meal ${new Date(k.lastMade).toLocaleDateString()}`].filter(Boolean).join(' · ');
+  openModal(`<div class="recipe-screen"><div class="eyebrow">KEEPER</div><h2>${escapeHtml(r.icon)} ${escapeHtml(r.title)}</h2>${keeperServingsBar(k)}${r.instructions.length ? `<button class="primary cook-start" onclick="openCookKeeper(${k.id})">Start cooking</button>` : ''}${recipeBody(r, factor)}<p class="muted small">${escapeHtml(note)}</p><button class="text-btn danger" style="margin-top:6px" onclick="confirmDeleteKeeper(${k.id})">Delete this keeper</button></div><div class="modal-foot"><button class="outline" onclick="closeModal()">Done</button><button class="primary" onclick="addToMealModal(${k.id})">＋ Add to a meal</button></div>`, false, true);
 }
 
 function confirmDeleteKeeper(id) {

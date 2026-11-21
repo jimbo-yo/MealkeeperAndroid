@@ -2,9 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Only for chatting with the AI the user connects with their own API key (AiApi). -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Lets the timeline hand a start-cooking alarm to the Clock app (a normal permission: no prompt). -->
+    <!-- Lets the timeline/Cook mode hand alarms and timers to the Clock app (a normal permission: no prompt). -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
-    <!-- Talking to the chat (Voice): asked for the first time the mic button is tapped. -->
+    <!-- Chat voice (Voice) and hands-free Cook mode (CookVoice): asked for the first time a mic button is tapped. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Lets MainActivity find the ChatGPT, Claude and Grok apps (Android 11+ package visibility); see AI_APPS. -->
     <queries>
@@ -26,7 +26,7 @@
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:label="Prompt to Pan"
+        android:label="${appLabel}"
         android:theme="@style/Theme.Mealkeeper"
         android:usesCleartextTraffic="false">
         <activity

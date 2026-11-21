@@ -4,6 +4,21 @@
    --android-ime-bottom to the keyboard's height while it's open.
    Settings > Appearance sets data-theme on <html>: Linen (light, the default), soft olive (dark), or match the phone. */
 
+/* Body text: Atkinson Hyperlegible, designed for legibility (SIL OFL 1.1, see fonts/AtkinsonHyperlegible-OFL.txt). */
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("fonts/AtkinsonHyperlegible-Regular.ttf") format("truetype");
+  font-weight: 400 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("fonts/AtkinsonHyperlegible-Bold.ttf") format("truetype");
+  font-weight: 650 900;
+  font-display: swap;
+}
+
 /* The app name's fonts, bundled so they work offline: Satisfy for "to Pan" (Apache 2.0, see fonts/Satisfy-LICENSE.txt)
    and Space Mono Bold, Latin only, for "Prompt" (SIL OFL 1.1, see fonts/SpaceMono-OFL.txt). */
 @font-face {
@@ -20,7 +35,7 @@
 }
 
 :root {
-  --font-body: Inter, Roboto, "Segoe UI", sans-serif;
+  --font-body: "Atkinson Hyperlegible", Inter, Roboto, "Segoe UI", sans-serif;
   /* The larger of the browser's own inset (an iPhone's status bar or notch, in a home-screen web app) and the one
      MainActivity sends; whichever applies, the other is 0. */
   --safe-top: max(env(safe-area-inset-top), var(--android-safe-top, 0px));
@@ -97,7 +112,7 @@ button:active {
   background: #d2704a;
   color: #1d211c;
   text-align: center;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
 }
 
@@ -109,7 +124,7 @@ button:active {
   border: 0;
   background: none;
   color: inherit;
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1;
   padding: 2px 6px;
 }
@@ -182,7 +197,7 @@ button:active {
 
 .top-actions .primary {
   padding: 9px 12px;
-  font-size: 12px;
+  font-size: 14px;
   white-space: nowrap;
 }
 
@@ -214,7 +229,7 @@ button:active {
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: 13px;
   padding: 4px 2px;
 }
 
@@ -238,7 +253,7 @@ button:active {
   padding: 13px 18px;
   border-radius: 99px;
   box-shadow: 0 8px 30px #0002;
-  font-size: 13px;
+  font-size: 15px;
   text-align: center;
   white-space: normal;
   z-index: 10;
@@ -294,7 +309,7 @@ button:active {
 /* ---- Text and layout helpers ---- */
 
 .eyebrow {
-  font-size: 12px;
+  font-size: 14px;
   text-transform: uppercase;
   letter-spacing: 1.5px;
   color: light-dark(#65755e, #a8bd9f);
@@ -313,7 +328,7 @@ button:active {
 
 .subhead {
   color: light-dark(#6b7167, #a4aca1);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.55;
   margin: 0 0 20px;
 }
@@ -323,7 +338,7 @@ button:active {
 }
 
 .small {
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .row {
@@ -362,7 +377,7 @@ button:active {
 }
 
 .section-head h2 {
-  font-size: 17px;
+  font-size: 19px;
   margin: 0;
   letter-spacing: -.4px;
 }
@@ -383,7 +398,7 @@ button:active {
 }
 
 .badge {
-  font-size: 11px;
+  font-size: 13px;
   border-radius: 99px;
   background: light-dark(#e4eadc, #2b3928);
   color: light-dark(#45613f, #c3dcb9);
@@ -398,7 +413,7 @@ button:active {
   color: white;
   border-radius: 99px;
   padding: 12px 19px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 650;
   display: inline-flex;
   align-items: center;
@@ -410,7 +425,7 @@ button:active {
   color: light-dark(#293a28, #e1e8dc);
   border-radius: 99px;
   padding: 11px 17px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 650;
 }
 
@@ -420,14 +435,14 @@ button:active {
   border: 1px solid light-dark(#cdd3c6, #454e43);
   border-radius: 99px;
   padding: 10px 15px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 650;
 }
 
 .text-btn {
   color: light-dark(#496548, #b7d2ae);
   background: transparent;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -478,7 +493,7 @@ textarea.field {
 
 .field-label {
   display: block;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   margin: 15px 0 7px;
 }
@@ -529,7 +544,7 @@ textarea.field {
   padding: 11px 10px;
   background: transparent;
   color: light-dark(#747a70, #a3aba0);
-  font-size: 12px;
+  font-size: 14px;
   border-bottom: 2px solid transparent;
 }
 
@@ -563,7 +578,7 @@ textarea.field {
 }
 
 .stat .label {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.35;
   color: light-dark(#73796f, #9ca59a);
   margin-top: 5px;
@@ -617,7 +632,7 @@ textarea.field {
 }
 
 .art-tag {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 750;
   background: #ffffffb8;
   border-radius: 99px;
@@ -629,12 +644,12 @@ textarea.field {
 }
 
 .meal-content h3 {
-  font-size: 17px;
+  font-size: 19px;
   margin: 0 0 7px;
 }
 
 .meal-content p {
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
   color: light-dark(#74796f, #a0a89e);
   margin: 0 0 15px;
@@ -644,7 +659,7 @@ textarea.field {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 14px;
   color: light-dark(#686f64, #a0a89d);
 }
 
@@ -660,7 +675,7 @@ textarea.field {
   background: light-dark(#e7ebdf, #303b2d);
   display: grid;
   place-items: center;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 /* ---- Recipe rows ---- */
@@ -698,12 +713,12 @@ textarea.field {
 }
 
 .recipe-row h3 {
-  font-size: 14px;
+  font-size: 16px;
   margin: 0 0 5px;
 }
 
 .recipe-row p {
-  font-size: 12px;
+  font-size: 14px;
   margin: 0;
   color: light-dark(#74796f, #a0a89e);
 }
@@ -722,7 +737,7 @@ textarea.field {
   gap: 9px;
   padding: 13px 0;
   border-bottom: 1px solid var(--line);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .checkrow:last-child {
@@ -751,7 +766,7 @@ textarea.field {
 .qty {
   margin-left: auto;
   color: light-dark(#777d73, #a3aba0);
-  font-size: 11px;
+  font-size: 13px;
   text-align: right;
 }
 
@@ -764,7 +779,7 @@ textarea.field {
 }
 
 .time {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 750;
   color: light-dark(#496548, #b9d8ae);
   padding: 14px 0;
@@ -789,12 +804,12 @@ textarea.field {
 }
 
 .timeitem strong {
-  font-size: 14px;
+  font-size: 16px;
   overflow-wrap: anywhere;
 }
 
 .timeitem p {
-  font-size: 12px;
+  font-size: 14px;
   color: light-dark(#747a70, #a2aaa0);
   line-height: 1.5;
   margin: 5px 0 0;
@@ -823,11 +838,11 @@ textarea.field {
 
   .stat .label {
     margin-top: 0;
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .top-actions .primary {
-    font-size: 11px;
+    font-size: 13px;
     padding: 8px 10px;
   }
 
@@ -836,7 +851,7 @@ textarea.field {
   }
 
   .mobile-nav button {
-    font-size: 10px;
+    font-size: 12px;
   }
 }
 
@@ -891,7 +906,7 @@ textarea.field {
     gap: 12px;
     padding: 10px 12px;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 16px;
   }
 
   .mobile-nav button.active {
@@ -900,7 +915,7 @@ textarea.field {
 
   .mobile-nav span {
     width: 22px;
-    font-size: 18px;
+    font-size: 20px;
     text-align: center;
   }
 
@@ -925,14 +940,14 @@ textarea.field {
 
 .keeper-tag {
   margin: 0 0 12px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   color: light-dark(#a0701f, #e7c27a);
 }
 
 .keeper-star {
   color: light-dark(#a0701f, #e7c27a);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .keeper-note {
@@ -953,7 +968,7 @@ textarea.field {
   max-width: 88%;
   padding: 11px 14px;
   border-radius: 18px;
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.5;
   white-space: pre-wrap;
 }
@@ -966,7 +981,7 @@ textarea.field {
 }
 
 .bubble-about {
-  font-size: 12px;
+  font-size: 14px;
   opacity: .8;
   margin-bottom: 4px;
 }
@@ -997,7 +1012,7 @@ textarea.field {
 
 .bubble.ai pre {
   overflow-x: auto;
-  font-size: 12px;
+  font-size: 14px;
   background: var(--surface-2);
   padding: 8px;
   border-radius: 8px;
@@ -1005,7 +1020,7 @@ textarea.field {
 }
 
 .bubble.ai code {
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .list-preview {
@@ -1028,7 +1043,7 @@ textarea.field {
   align-self: flex-start;
   margin: -4px 0 0 6px;
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: light-dark(#73796f, #a0a99e);
 }
@@ -1047,7 +1062,7 @@ textarea.field {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 15px;
   color: light-dark(#6d7569, #a1aa9d);
   padding: 4px 2px;
 }
@@ -1083,7 +1098,7 @@ textarea.field {
   color: light-dark(#7c2f1d, #f6c9b8);
   border-radius: 14px;
   padding: 12px 14px;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .chat-error .text-btn {
@@ -1093,7 +1108,7 @@ textarea.field {
 }
 
 .chip {
-  font-size: 13px;
+  font-size: 15px;
   padding: 8px 13px;
   text-align: left;
 }
@@ -1128,7 +1143,7 @@ textarea.field {
   height: 44px;
   padding: 0;
   justify-content: center;
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .composer .mic {
@@ -1188,6 +1203,569 @@ textarea.field {
   cursor: pointer;
   width: fit-content;
   color: light-dark(#496548, #b7d2ae);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
+}
+
+/* ---- Recipe screen (a full-screen sheet) ---- */
+
+.modal-bg.full {
+  padding: 0;
+  align-items: stretch;
+}
+
+.modal-bg.full .modal {
+  max-height: none;
+  height: 100%;
+  border-radius: 0;
+  padding: calc(var(--safe-top) + 16px) 20px calc(var(--safe-bottom) + 16px);
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-bg.full .modal-foot {
+  position: sticky;
+  bottom: calc(-16px - var(--safe-bottom));
+  margin: auto -20px calc(-16px - var(--safe-bottom));
+  padding: 12px 20px calc(var(--safe-bottom) + 12px);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
+.modal-bg.full .modal-foot button {
+  justify-content: center;
+  text-align: center;
+}
+
+.recipe-screen h2 {
+  font-size: 28px;
+  line-height: 1.15;
+  margin-bottom: 14px;
+}
+
+.recipe-screen .panel {
+  font-size: 18px;
+}
+
+.recipe-screen .panel > strong {
+  font-size: 20px;
+}
+
+.recipe-screen .checkrow {
+  font-size: 18px;
+  padding: 12px 0;
+}
+
+.recipe-screen .qty {
+  font-size: 18px;
+  font-weight: 700;
+  color: inherit;
+}
+
+.recipe-screen ol {
+  font-size: 18px !important;
+  line-height: 1.55 !important;
+}
+
+.servings-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  margin: 4px 0 14px;
+  border-radius: 20px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.servings-bar > div {
+  flex: 1;
+  text-align: center;
+  line-height: 1.1;
+}
+
+.servings-bar b {
+  display: block;
+  font-size: 34px;
+}
+
+.servings-bar span {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.servings-bar button {
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: inherit;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.servings-bar button:disabled {
+  opacity: .35;
+}
+
+.cook-start {
+  width: 100%;
+  justify-content: center;
+  min-height: 60px;
+  font-size: 20px;
+  margin-bottom: 18px;
+}
+
+/* ---- Cook mode ---- */
+
+html.cooking body {
+  overflow: hidden;
+}
+
+.cook {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding-top: var(--safe-top);
+}
+
+.cook[hidden] {
+  display: none;
+}
+
+.cook-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px 10px;
+}
+
+.cook-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 19px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cook-progress {
+  display: flex;
+  gap: 5px;
+  padding: 2px 16px;
+}
+
+.cook-seg {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.cook-seg i {
+  display: block;
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--track);
+}
+
+.cook-seg i.done {
+  background: #496548;
+}
+
+.cook-seg i.now {
+  background: #e3b341;
+}
+
+.cook-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px;
+}
+
+.cook-step-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 18px;
+  font-weight: 750;
+  color: light-dark(#496548, #c3dfb8);
+}
+
+.cook-serves {
+  font-size: 15px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: light-dark(#f3d27a, #6a5524);
+  color: light-dark(#1d211c, #f6ecd2);
+}
+
+.cook-step {
+  font-size: 27px;
+  line-height: 1.38;
+  margin: 16px 0 20px;
+}
+
+.cook-step mark {
+  background: light-dark(#fbebbd, #5a4a1f);
+  color: inherit;
+  border-radius: 6px;
+  padding: 0 3px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.cook-next {
+  font-size: 18px;
+  line-height: 1.5;
+  color: light-dark(#5d6559, #b3bbb0);
+}
+
+.cook-next strong {
+  color: light-dark(#1d211c, #e5e8e1);
+}
+
+.cook-show {
+  font-size: 19px;
+  padding: 10px 0;
+}
+
+.cook-finish {
+  text-align: center;
+  padding: 60px 10px;
+}
+
+.cook-finish h2 {
+  font-size: 32px;
+}
+
+.cook-foot {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 12px;
+  padding: 12px 16px calc(var(--safe-bottom) + 14px);
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.cook-foot button {
+  min-height: 72px;
+  border-radius: 20px;
+  justify-content: center;
+  font-size: 21px;
+}
+
+.cook-foot button:disabled {
+  opacity: .35;
+}
+
+.cook-sheet-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 31;
+  display: flex;
+  align-items: flex-end;
+  background: #0006;
+}
+
+.cook-sheet {
+  width: 100%;
+  max-height: 78vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: 24px 24px 0 0;
+  padding: 18px 20px calc(var(--safe-bottom) + 18px);
+}
+
+.cook-sheet h3 {
+  font-size: 22px;
+  margin: 6px 0 6px;
+}
+
+.cook-sheet .secondary {
+  width: 100%;
+  margin-top: 10px;
+  min-height: 52px;
+  font-size: 18px;
+}
+
+.cook-ing {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  border-radius: 12px;
+  padding: 8px 8px;
+  font-size: 18px;
+}
+
+.cook-ing .amt {
+  flex: 0 0 6.5em;
+  font-weight: 750;
+}
+
+.cook-ing.large {
+  font-size: 21px;
+  padding: 11px 8px;
+}
+
+.cook-ing.got {
+  background: light-dark(#e4eadc, #2b3928);
+}
+
+.cook-ing.got span {
+  text-decoration: line-through;
+  color: light-dark(#73796f, #a0a99e);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cook-foot button {
+    transition: none;
+  }
+}
+
+/* ---- Cook mode voice ---- */
+
+.cook-voice,
+.cook-read {
+  min-height: 44px;
+}
+
+.cook-voice-status {
+  margin: 10px 16px 0;
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 16px;
+  background: light-dark(#e4eadc, #2b3928);
+  transition: background .3s;
+}
+
+.cook-voice-status.heard {
+  background: light-dark(#f3d27a, #6a5524);
+}
+
+.cook-voice-status.problem {
+  background: light-dark(#f6d9d3, #4a2b24);
+}
+
+.cook .flash {
+  background-color: #e3b341 !important;
+  color: #1d211c !important;
+  border-radius: 12px;
+  transition: background-color .3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cook .flash,
+  .cook-voice-status,
+  .cook-timer-chip.done {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* ---- Cook mode timers ---- */
+
+.cook-timers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+
+.cook-timer-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: light-dark(#efe6d4, #30392d);
+  border: 1px solid var(--line);
+}
+
+.cook-timer-chip.paused {
+  opacity: .78;
+}
+
+.cook-timer-chip.done {
+  background: light-dark(#f3d27a, #6a5524);
+  color: light-dark(#1d211c, #f6ecd2);
+  border-color: #d2704a;
+  animation: timer-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes timer-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(210, 112, 74, .45); }
+  50% { box-shadow: 0 0 0 6px rgba(210, 112, 74, 0); }
+}
+
+.cook-timer-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cook-timer-time {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cook-timer-btn {
+  min-height: 36px;
+  padding: 4px 10px;
+  font-size: 14px;
+}
+
+.cook-step-timers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.cook-timer-offer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cook-timer-start {
+  min-height: 48px;
+  font-size: 17px;
+  padding: 10px 16px;
+}
+
+.cook-timer-clock {
+  min-height: 48px;
+  font-size: 15px;
+  padding: 10px 12px;
+}
+
+/* ---- Cook mode: meal timeline ---- */
+
+.cook-tl-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 16px 2px;
+  font-size: 15px;
+  color: light-dark(#4a5347, #c1c9be);
+}
+
+.cook-tl-ov-btn {
+  min-height: 36px;
+  padding: 4px 12px;
+  font-size: 15px;
+}
+
+.cook-dish-tag {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 700;
+  background: light-dark(#e4eadc, #2b3928);
+  color: light-dark(#2c3f2a, #d1e6ca);
+}
+
+.cook-task {
+  font-size: 28px;
+  line-height: 1.25;
+  margin: 12px 0 10px;
+}
+
+.cook-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.cook-overview-serve {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cook-overview-serve .field {
+  width: auto;
+  min-width: 140px;
+  margin: 0;
+}
+
+.cook-overview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.cook-overview-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: inherit;
+  font-size: 16px;
+}
+
+.cook-overview-row.now {
+  background: light-dark(#fbebbd, #5a4a1f);
+  border-color: #e3b341;
+}
+
+.cook-overview-row.done {
+  opacity: .7;
+}
+
+.cook-overview-row.serve-row {
+  background: light-dark(#e4eadc, #2b3928);
+  border-color: transparent;
+}
+
+.cook-ov-time {
+  flex: 0 0 5.4em;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.cook-ov-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cook-dish-steps {
+  padding-left: 22px;
+  margin: 10px 0 14px;
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.cook-dish-steps li {
+  margin-bottom: 10px;
 }

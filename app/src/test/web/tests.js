@@ -60,6 +60,10 @@ function reset() {
   canTalk = null;
   bridge.voice = false;
   keepers.length = 0;
+  closeCook();
+  readSteps = false;
+  Object.keys(chosenServings).forEach(k => delete chosenServings[k]);
+  bridge.cookVoice = false;
   mealsTab = 'meals';
   keeperQuery = '';
   render();
@@ -532,7 +536,7 @@ test('export sends the backup to Android', () => {
   assert(call, 'bridge not called');
   assert(/^prompt-to-pan-backup-\d{4}-\d{2}-\d{2}\.json$/.test(call[1]), 'file name ' + call[1]);
   let data = JSON.parse(call[2]);
-  eq([data.format, data.meals.length, data.settings], [BACKUP_FORMAT, 4, {awake: false, cookAwake: true, clipOffer: true, appearance: 'light'}]);
+  eq([data.format, data.meals.length, data.settings], [BACKUP_FORMAT, 4, {awake: false, cookAwake: true, readSteps: false, clipOffer: true, appearance: 'light'}]);
 });
 
 test('restore asks first, then replaces the data', () => {
@@ -2018,6 +2022,408 @@ test('Settings shows the Share QR code and shares the site link', () => {
   [...main().querySelectorAll('.share-panel button')].find(b => b.textContent.includes('Share link')).click();
   let [, text, title] = bridgeCalls('shareText').pop();
   assert(text.endsWith(SITE_URL) && title === 'Share Prompt to Pan', text);
+});
+
+// ---- Recipe screen and Cook mode (cook.js) ----
+
+test('scaled amounts are written as kitchen fractions; text amounts stay as given', () => {
+  eq([scaledQty(1, 'tbsp', 1.5), scaledQty(0.5, 'cup', 2 / 3), scaledQty(2, 'cloves', 1.5), scaledQty(12, 'oz', 4 / 3),
+      scaledQty('a pinch', '', 2), scaledQty(1.2, 'kg', 1), scaledQty(1, '', 1.45), scaledQty(1, '', 1.37)],
+    ['1 ½ tbsp', '⅓ cup', '3 cloves', '16 oz', 'a pinch', '1.2 kg', '1.45', '1 ⅜']);
+});
+
+test('a step finds the ingredients it mentions, including by a distinctive word', () => {
+  let r = meals[0].recipes[1];
+  eq(r.instructions.map((_, i) => stepIngredients(r, i).map(x => x.name)), [
+    ['Italian sausage links', 'Olive oil'],
+    ['Bell peppers', 'Garlic'],
+    ['Heavy cream', 'Rigatoni pasta'],
+    ['Rigatoni pasta'],
+    ['Rigatoni pasta', 'Parmesan']
+  ]);
+});
+
+test('a step shows each amount in front of its ingredient, as text', () => {
+  let r = meals[0].recipes[1];
+  let html = markedStep(r, 0, 1);
+  assert(html.includes('<mark><b>1 lb</b> sausage</mark>'), html);
+  assert(html.includes('<mark><b>1 tbsp</b> olive oil</mark>'), html);
+  let evil = {ingredients: [{name: '<b>x</b>', quantity: 1, unit: ''}], instructions: ['Add <b>x</b> & stir']};
+  assert(!markedStep(evil, 0, 1).includes('<b>x</b>'), 'step text is escaped');
+});
+
+test('the recipe screen fills the screen, scales with servings and offers Start cooking', () => {
+  openMeal(1);
+  showRecipe(1);
+  assert(document.getElementById('modal-bg').classList.contains('full'), 'full screen');
+  let bar = modal().querySelector('.servings-bar');
+  eq(bar.querySelector('b').textContent, '3');
+  bar.querySelectorAll('button')[1].click();
+  bar = modal().querySelector('.servings-bar');
+  eq(bar.querySelector('b').textContent, '4');
+  assert(modal().textContent.includes('16 oz'), 'rigatoni scaled from 12 oz: ' + modal().textContent);
+  assert(modal().querySelector('.cook-start'), 'Start cooking');
+  closeModal();
+  openImport();
+  assert(!document.getElementById('modal-bg').classList.contains('full'), 'other dialogs are not full screen');
+});
+
+test('Cook mode goes through the steps and Back closes the ingredients list before leaving', () => {
+  openMeal(1);
+  showRecipe(1);
+  modal().querySelector('.cook-start').click();
+  let cookEl = document.getElementById('cook');
+  assert(!cookEl.hidden && cookEl.textContent.includes('Step 1 of 5'), cookEl.textContent);
+  eq(lastAwakeCall(), true, 'screen stays on');
+  [...cookEl.querySelectorAll('.cook-foot button')].pop().click();
+  assert(cookEl.textContent.includes('Step 2 of 5'));
+  assert(cookEl.querySelector('.cook-step mark'), 'amounts in the step');
+  cookEl.querySelector('.cook-show').click();
+  assert(cookEl.querySelector('.cook-sheet').textContent.includes('For step 2'), 'step ingredients first');
+  cookEl.querySelector('.cook-ing.large').click();
+  assert(cookEl.querySelector('.cook-ing.large.got'), 'ticked off');
+  eq([handleBack(), !!cookEl.querySelector('.cook-sheet'), !cookEl.hidden], [true, false, true], 'Back closes the list first');
+  eq([handleBack(), cookEl.hidden, modalOpen()], [true, true, true], 'then leaves Cook mode, back on the recipe');
+});
+
+test('Cook mode finishes with a way back to the recipe', () => {
+  openMeal(1);
+  openCook(0);
+  for (let k = 0; k < 3; k++) cookStep(1);
+  let cookEl = document.getElementById('cook');
+  assert(cookEl.textContent.includes('All steps done'), cookEl.textContent);
+  [...cookEl.querySelectorAll('.cook-foot button')].pop().click();
+  eq(cookEl.hidden, true);
+});
+
+// ---- Cook mode voice ----
+
+const cookEl = () => document.getElementById('cook');
+const spoken = () => bridgeCalls('cookVoiceSpeak').map(c => c[1]);
+
+function cookWithVoice() {
+  bridge.cookVoice = true;
+  openMeal(1);
+  openCook(1);
+  cookEl().querySelector('.cook-voice').click();
+  window.onCookVoice('listening', '');
+}
+
+test('voice commands are read from the last command word heard', () => {
+  eq(['next', 'okay next step', 'go back', 'say that again', 'what are the ingredients', 'close', 'stop', 'back to the recipe', 'exit', 'the sauce'].map(parseCookCommand),
+    ['next', 'next', 'back', 'repeat', 'ingredients', 'close', 'stop', 'recipe', 'recipe', '']);
+});
+
+test('amounts are read as they are said', () => {
+  eq([spokenAmount(1.5, 'tbsp', 1), spokenAmount(0.5, 'tsp', 1), spokenAmount(1, 'tbsp', 1), spokenAmount(3, 'cloves', 1),
+      spokenAmount(2, '', 1), spokenAmount('a pinch', '', 1), spokenAmount(0.25, 'lb', 1), spokenAmount(1, 'lb', 4 / 3)],
+    ['1 and a half tablespoons', 'half a teaspoon', '1 tablespoon', '3 cloves', '2', 'a pinch', 'a quarter of a pound', '1 and a third pounds']);
+});
+
+test('Voice only appears where voice control exists', () => {
+  openMeal(1);
+  openCook(1);
+  eq(cookEl().querySelector('.cook-voice'), null, 'not in the web version');
+  closeCook();
+  go('settings');
+  assert(!main().textContent.includes('Read steps aloud'));
+  bridge.cookVoice = true;
+  render();
+  assert(main().textContent.includes('Read steps aloud'), 'in Settings in the app');
+});
+
+test('voice commands move through Cook mode and flash the control they used', () => {
+  cookWithVoice();
+  eq(bridgeCalls('cookVoiceStart').length, 1);
+  assert(cookEl().textContent.includes('Listening'), cookEl().textContent);
+  eq(spoken(), [], 'steps are not read aloud by default');
+  window.onCookVoice('heard', 'next');
+  assert(cookEl().textContent.includes('Step 2 of 5'));
+  assert(cookEl().querySelector('.cook-foot .primary.flash'), 'Next flashed');
+  assert(cookEl().textContent.includes('Heard “next”'));
+  window.onCookVoice('heard', 'ingredients');
+  assert(cookEl().querySelector('.cook-sheet'), 'list opened');
+  window.onCookVoice('heard', 'back');
+  eq([!!cookEl().querySelector('.cook-sheet'), cookEl().textContent.includes('Step 2 of 5')], [false, true], '"back" closes the list first');
+  window.onCookVoice('heard', 'go back');
+  assert(cookEl().textContent.includes('Step 1 of 5'));
+  window.onCookVoice('heard', 'recipe');
+  eq([cookEl().hidden, bridgeCalls('cookVoiceStop').length], [true, 1], '"recipe" leaves Cook mode and stops listening');
+});
+
+test('with Read steps aloud on, each step is read with its amounts', () => {
+  setReadSteps(true);
+  cookWithVoice();
+  assert(spoken()[0].startsWith('Step 1. Brown the 1 pound sausage in 1 tablespoon olive oil'), spoken()[0]);
+  cookStep(1);
+  assert(spoken()[1].startsWith('Step 2. Add 2 peppers and 3 cloves garlic'), spoken()[1]);
+  window.onCookVoice('heard', 'stop');
+  eq(bridgeCalls('cookVoiceQuiet').length, 1);
+  let backup;
+  bridge.saveBackupFile = (name, json) => backup = JSON.parse(json);
+  exportBackup(true);
+  delete bridge.saveBackupFile;
+  eq(backup.settings.readSteps, true, 'kept in backups');
+});
+
+test('"repeat" reads the step even with Read steps aloud off', () => {
+  cookWithVoice();
+  window.onCookVoice('heard', 'repeat');
+  eq(spoken().length, 1);
+  assert(cookEl().querySelector('.cook-step.flash'), 'step flashed');
+});
+
+test('a refused microphone explains itself and turns voice off', () => {
+  bridge.cookVoice = true;
+  openMeal(1);
+  openCook(0);
+  cookEl().querySelector('.cook-voice').click();
+  window.onCookVoice('error', 'denied');
+  assert(cookEl().textContent.includes('needs the microphone'), cookEl().textContent);
+  eq(cookEl().querySelector('.cook-voice').textContent, 'Voice');
+});
+
+test('scaling keeps small amounts above zero, pluralizes units, and updates Serves', () => {
+  eq([scaledQty(0.125, 'tsp', 0.25), scaledQty(1, 'clove', 2), scaledQty(3, 'cloves', 1 / 3),
+      scaledQty(1, 'cup', 1.5), scaledQty(2, 'cups', 0.25)],
+    ['0.03 tsp', '2 cloves', '1 clove', '1 ½ cups', '½ cup']);
+  openMeal(1);
+  showRecipe(1);
+  modal().querySelectorAll('.servings-bar button')[1].click();
+  assert(modal().textContent.includes('Serves: 4'), 'recipe facts reflect scaled servings: ' + modal().textContent);
+});
+
+test('ingredient matching handles -es/-ies singulars, longest overlap, and skips duplicate quantities', () => {
+  let r = {
+    ingredients: [
+      {name: 'Red wine', quantity: 0.5, unit: 'cup'},
+      {name: 'Red wine vinegar', quantity: 2, unit: 'tbsp'},
+      {name: 'Cherry tomatoes', quantity: 1, unit: 'pint'},
+      {name: 'Fresh berries', quantity: 1, unit: 'cup'},
+      {name: 'Olive oil', quantity: 2, unit: 'tbsp'},
+      {name: 'Italian sausage links', quantity: 1, unit: 'lb'},
+      {name: 'Salt', quantity: 'a pinch', unit: ''}
+    ],
+    instructions: [
+      'Whisk red wine vinegar with each tomato and berry.',
+      'Add 2 tbsp olive oil, a pinch of salt, and Italian seasoning.'
+    ]
+  };
+  eq(stepIngredients(r, 0).map(x => x.name), ['Red wine vinegar', 'Cherry tomatoes', 'Fresh berries']);
+  let html0 = markedStep(r, 0, 1);
+  assert(html0.includes('<mark><b>2 tbsp</b> red wine vinegar</mark>'), html0);
+  assert(html0.includes('<mark><b>1 pint</b> tomato</mark>'), html0);
+  assert(html0.includes('<mark><b>1 cup</b> berry</mark>'), html0);
+  let html1 = markedStep(r, 1, 1);
+  assert(html1.includes('2 tbsp <mark>olive oil</mark>'), 'no doubled tbsp: ' + html1);
+  assert(html1.includes('a pinch of <mark>salt</mark>'), 'no doubled pinch: ' + html1);
+  assert(!html1.includes('1 lb'), 'vague "Italian" does not match sausage: ' + html1);
+});
+
+test('spoken amounts and steps use natural grammar, temperatures and ranges', () => {
+  eq([spokenAmount(0.5, 'oz', 1), spokenAmount(0.25, 'oz.', 1), spokenAmount(1.5, 'cup', 1),
+      spokenAmount(1, 'cloves', 1), spokenAmount(2, 'bunch', 1), spokenAmount(1, 'tbsp.', 2)],
+    ['half an ounce', 'a quarter of an ounce', '1 and a half cups', '1 clove', '2 bunches', '2 tablespoons']);
+  let r = {
+    servings: 2,
+    ingredients: [{name: 'Olive oil', quantity: 2, unit: 'tbsp'}],
+    instructions: ['Bake at 350 °F (180°C) for 6–7 minutes after adding 2 tbsp olive oil.']
+  };
+  eq(spokenStep({id: 99}, r, 0), 'Step 1. Bake at 350 degrees (180 degrees Celsius) for 6 to 7 minutes after adding 2 tablespoons olive oil.');
+});
+
+test('scaling servings also scales portion counts and inline quantities in step text without touching temps, times, or pan sizes', () => {
+  let r = {
+    id: 'buns',
+    servings: 6,
+    ingredients: [
+      {name: 'Butter', quantity: 2, unit: 'tbsp'},
+      {name: 'Bell peppers', quantity: 2, unit: ''}
+    ],
+    instructions: [
+      'Divide dough into 6 equal pieces and shape 6 burger patties, about ½ inch thick.',
+      'In a 4-quart Dutch oven, melt 2 tbsp butter, add 2 bell peppers, and bake at 375°F for 15–18 minutes on a 9x13-inch sheet.',
+      'Cut each potato into 4 wedges and serve 2 patties per person.'
+    ]
+  };
+  let f = 8 / 6;
+  eq(scaleStepText(r.instructions[0], r, f), 'Divide dough into 8 equal pieces and shape 8 burger patties, about ½ inch thick.');
+  eq(scaleStepText(r.instructions[1], r, f), 'In a 4-quart Dutch oven, melt 2 ⅔ tbsp butter, add 2 ⅔ bell peppers, and bake at 375°F for 15–18 minutes on a 9x13-inch sheet.');
+  eq(scaleStepText(r.instructions[2], r, f), 'Cut each potato into 4 wedges and serve 2 patties per person.', 'per-item and per-person counts stay fixed');
+  eq(scaleStepText('Shape 6 patties.', r, 1 / 6), 'Shape 1 patty.', 'singularizes when scaled to 1');
+  assert(markedStep(r, 0, f).includes('shape 8 burger patties'), 'Cook mode step scales yield');
+  chosenServings['99/buns'] = 8;
+  assert(spokenStep({id: 99}, r, 0).includes('shape 8 burger patties'), 'spoken step reads scaled yield');
+  assert(spokenStep({id: 99}, r, 1).includes('melt 2 and two thirds tablespoons butter'), 'spoken step expands scaled inline unit');
+});
+
+test('"ingredients" reads this step\'s ingredients aloud, "next" exits when done, and voice keeps screen awake', () => {
+  setCookAwake(false);
+  cookWithVoice();
+  eq(lastAwakeCall(), true, 'screen stays on while Cook Voice is active even when cookAwake is off');
+  cookStep(1); // Step 2: peppers and garlic
+  window.onCookVoice('heard', 'ingredients');
+  assert(spoken().pop().includes('For step 2: 2 Bell peppers, sliced. 3 cloves Garlic, minced.'), spoken().join(' | '));
+  cookGoTo(5); // All steps done
+  window.onCookVoice('heard', 'next');
+  eq(cookEl().hidden, true, '"next" on All steps done exits Cook mode');
+});
+
+test('inline step timers parse durations, persist across steps, respond to voice, and hand off to Clock', () => {
+  eq(stepTimers('Cook 6–7 minutes, then bake 1 hour 15 minutes and whisk 30 seconds.'),
+    [{seconds: 360, label: '6–7 min'}, {seconds: 4500, label: '1 hr 15 min'}, {seconds: 30, label: '30 sec'}]);
+  cookWithVoice();
+  cookStep(1); // Step 2: "...about 8 minutes."
+  assert(cookEl().querySelector('.cook-timer-start').textContent.includes('8 min'), 'timer pill shown');
+  cookEl().querySelector('.cook-timer-clock').click();
+  eq(bridgeCalls('setTimer').pop()[1], 480, 'Clock handoff passes seconds');
+  window.onCookVoice('heard', 'start the timer');
+  eq(cook.timers.length, 1, 'voice started timer');
+  assert(spoken().pop().includes('Timer set for 8 minutes'), 'voice confirmed timer');
+  cookStep(1); // Move to Step 3: timer stays visible
+  assert(cookEl().querySelector('.cook-timer-chip'), 'timer persists across steps');
+  let id = cook.timers[0].id;
+  toggleCookTimer(id);
+  eq(cook.timers[0].paused, true, 'paused');
+  bumpCookTimer(id, 60);
+  assert(cook.timers[0].remainingMs > 480000, '+1m added');
+  cook.timers[0].done = true;
+  window.onCookVoice('heard', 'timer');
+  eq(cook.timers.length, 0, 'voice "timer" dismisses ringing timer');
+});
+
+test('progress segments jump directly to steps and keepers support scaling and Cook mode', () => {
+  openMeal(1);
+  openCook(1);
+  cookEl().querySelectorAll('.cook-seg')[3].click();
+  assert(cookEl().textContent.includes('Step 4 of 5'), 'jumped to step 4');
+  closeCook();
+  keepRecipe(1);
+  let k = keepers[0];
+  showKeeper(k.id);
+  assert(document.getElementById('modal-bg').classList.contains('full'), 'keeper opens full screen');
+  modal().querySelectorAll('.servings-bar button')[1].click();
+  assert(modal().textContent.includes('16 oz'), 'keeper ingredients scale');
+  modal().querySelector('.cook-start').click();
+  assert(!cookEl().hidden && cookEl().textContent.includes('Serves 4'), 'keeper opens in Cook mode with chosen servings');
+});
+
+test('Cooking timeline opens full-screen meal Cook mode with live target time overview, timers, ingredients and voice', () => {
+  bridge.cookVoice = true;
+  openMeal(1);
+  go('timeline');
+  let startBtn = main().querySelector('.cook-start');
+  assert(startBtn && startBtn.textContent.includes('Start cooking meal'), 'Start cooking meal button shown on timeline');
+  startBtn.click();
+  assert(!cookEl().hidden && cookEl().textContent.includes('Step 1 of 6'), cookEl().textContent);
+  assert(cookEl().textContent.includes('5:35 PM') && cookEl().textContent.includes('6:30 PM'), 'shows start and serve clock times');
+  assert(cookEl().querySelector('.cook-timer-start').textContent.includes('10 min'), 'offers step duration timer');
+
+  // Advance to Step 2 (linked to rigatoni): highlights scaled recipe ingredients and offers dish steps.
+  cookStep(1);
+  assert(cookEl().textContent.includes('Sausage & pepper rigatoni'), 'shows linked dish badge');
+  assert(cookEl().querySelector('.cook-step mark'), 'highlights linked recipe ingredients in timeline step');
+  assert(cookEl().querySelector('.cook-timer-start').textContent.includes('30 min'), 'offers 30 min timer');
+
+  // Overview sheet lets user change target serving time and jump to any step.
+  cookEl().querySelector('.cook-voice').click();
+  window.onCookVoice('listening', '');
+  window.onCookVoice('heard', 'overview');
+  assert(cookEl().querySelector('.cook-overview-list'), 'voice "overview" opened overview sheet');
+  setCookServeAt('19:00');
+  assert(cookEl().textContent.includes('6:05 PM') && cookEl().textContent.includes('7:00 PM'), 'changing serve time updates times live');
+  cookEl().querySelectorAll('.cook-overview-row')[3].click();
+  assert(cookEl().textContent.includes('Step 4 of 6') && cookEl().textContent.includes('Boil pasta'), 'tapping overview row jumped to step 4');
+
+  // Voice "timer" starts the timeline step duration timer, "ingredients" opens sheet and Back closes sheet first.
+  window.onCookVoice('heard', 'start the timer');
+  eq(cook.timers.length, 1, 'timer started from timeline step');
+  window.onCookVoice('heard', 'ingredients');
+  assert(cookEl().querySelector('.cook-sheet') && cookEl().querySelector('.cook-sheet').textContent.includes('For step 4'), 'step ingredients sheet opened');
+  eq([handleBack(), !!cookEl().querySelector('.cook-sheet'), !cookEl().hidden], [true, false, true], 'Back closes sheet first');
+
+  // View dish steps sheet & finish screen.
+  cookSheet('dish');
+  assert(cookEl().querySelector('.cook-dish-steps'), 'dish steps sheet shown');
+  cookGoTo(6);
+  assert(cookEl().textContent.includes('All steps done') && cookEl().textContent.includes('7:00 PM'), 'finish screen shows serve time');
+  window.onCookVoice('heard', 'next');
+  eq(cookEl().hidden, true, '"next" exits timeline Cook mode when done');
+});
+
+test('web version supports Cook mode voice via Web Speech API, read-aloud fallback, and keyboard navigation', () => {
+  let savedAndroid = window.MealkeeperAndroid,
+    savedSR = window.SpeechRecognition,
+    savedWebkitSR = window.webkitSpeechRecognition,
+    savedSynthDesc = Object.getOwnPropertyDescriptor(window, 'speechSynthesis'),
+    savedUtt = window.SpeechSynthesisUtterance;
+  let lastRec = null,
+    spokenWeb = [];
+  class FakeSR {
+    start() {
+      lastRec = this;
+      if (this.onstart) this.onstart();
+    }
+    stop() {
+      this.stopped = true;
+    }
+  }
+  try {
+    window.MealkeeperAndroid = undefined;
+    window.SpeechRecognition = FakeSR;
+    window.webkitSpeechRecognition = undefined;
+    window.SpeechSynthesisUtterance = function(t) { this.text = t; };
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        cancel() {},
+        speak(u) { spokenWeb.push(u.text); if (u.onend) u.onend(); }
+      }
+    });
+
+    openMeal(1);
+    go('settings');
+    assert(main().textContent.includes('Read steps aloud'), 'Read steps aloud shown on web when SpeechRecognition exists');
+    openCook(1);
+    assert(cookEl().querySelector('.cook-voice'), 'Voice button shown on web');
+    cookEl().querySelector('.cook-voice').click();
+    assert(lastRec && cookVoice === 'on', 'web SpeechRecognition started');
+
+    // Long conversation is ignored; short command advances step.
+    lastRec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'hey can you please pass me the next bowl over there'}], {isFinal: true})]});
+    assert(cookEl().textContent.includes('Step 1 of 5'), 'long chatter ignored');
+    lastRec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'next step'}], {isFinal: true})]});
+    assert(cookEl().textContent.includes('Step 2 of 5'), 'short web voice command advanced step');
+    lastRec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'repeat'}], {isFinal: true})]});
+    assert(spokenWeb.length === 1 && spokenWeb[0].startsWith('Step 2.'), 'web speechSynthesis read step');
+
+    // Keyboard shortcuts move steps and close sheets.
+    document.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowRight'}));
+    assert(cookEl().textContent.includes('Step 3 of 5'), 'ArrowRight advanced step');
+    document.dispatchEvent(new KeyboardEvent('keydown', {key: 'i'}));
+    assert(cookEl().querySelector('.cook-sheet'), '"i" opened ingredients');
+    document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+    assert(!cookEl().querySelector('.cook-sheet') && !cookEl().hidden, 'Escape closed sheet first');
+    closeCook();
+
+    // Without SpeechRecognition, browsers with speechSynthesis get a Read button.
+    window.SpeechRecognition = undefined;
+    openCook(1);
+    eq(cookEl().querySelector('.cook-voice'), null, 'no Voice button without SpeechRecognition');
+    let readBtn = cookEl().querySelector('.cook-read');
+    assert(readBtn, 'Read aloud fallback button shown');
+    readBtn.click();
+    assert(spokenWeb.length === 2 && spokenWeb[1].startsWith('Step 1.'), 'Read button speaks current step');
+    closeCook();
+  } finally {
+    stopWebCookVoice();
+    window.MealkeeperAndroid = savedAndroid;
+    window.SpeechRecognition = savedSR;
+    window.webkitSpeechRecognition = savedWebkitSR;
+    if (savedSynthDesc) Object.defineProperty(window, 'speechSynthesis', savedSynthDesc);
+    else delete window.speechSynthesis;
+    window.SpeechSynthesisUtterance = savedUtt;
+  }
 });
 
 // ---- Report ----

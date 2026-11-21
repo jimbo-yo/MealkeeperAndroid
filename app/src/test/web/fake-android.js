@@ -22,6 +22,11 @@ window.MealkeeperAndroid = {
     this.calls.push(['setAlarm', hour, minutes, label]);
     return this.alarmResult;
   },
+  timerResult: true,
+  setTimer(seconds, label) {
+    this.calls.push(['setTimer', seconds, label]);
+    return this.timerResult;
+  },
   // What sendToAiApp reports: 'shared', 'opened' or 'missing' (tests set this).
   aiAppResult: 'shared',
   sendToAiApp(ai, text) {
@@ -85,5 +90,22 @@ window.MealkeeperAndroid = {
   },
   voiceStop() {
     this.calls.push(['voiceStop']);
+  },
+  // Whether Cook mode's voice model is bundled (tests set this); tests answer through window.onCookVoice.
+  cookVoice: false,
+  cookVoiceAvailable() {
+    return this.cookVoice;
+  },
+  cookVoiceStart() {
+    this.calls.push(['cookVoiceStart']);
+  },
+  cookVoiceStop() {
+    this.calls.push(['cookVoiceStop']);
+  },
+  cookVoiceSpeak(text) {
+    this.calls.push(['cookVoiceSpeak', text]);
+  },
+  cookVoiceQuiet() {
+    this.calls.push(['cookVoiceQuiet']);
   }
 };
