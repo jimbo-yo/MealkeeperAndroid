@@ -128,6 +128,12 @@ fn set_appearance(window: WebviewWindow, mode: String) {
 }
 
 #[tauri::command]
+fn copy_text(text: String) -> Result<(), String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clipboard.set_text(text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
     if url.starts_with("https://") || url.starts_with("http://") || url.starts_with("mailto:") {
         open::that(&url).map_err(|e| e.to_string())
@@ -193,6 +199,7 @@ fn main() {
             open_backup_file,
             set_keep_screen_on,
             set_appearance,
+            copy_text,
             open_external_url,
             frontend_ready,
         ])

@@ -457,7 +457,8 @@ const AI_GUIDES = {
   gemini: {
     name: 'Gemini',
     url: 'https://gemini.google.com/app',
-    newChat: 'https://gemini.google.com/app?q=',
+    // Gemini web ignores ?q= query parameters, so sendPrompt copies the prompt and opens a clean chat to paste into.
+    newChat: '',
     steps: [
       'Tap <strong>Copy instructions</strong> below.',
       'Open <strong>gemini.google.com</strong>, click the bottom-left <strong>Settings</strong> icon, go to <strong>Customize → Skills</strong>, and click <strong>Create</strong> (or <strong>+ New Skill</strong>).',
@@ -1516,9 +1517,9 @@ function sendPrompt(ai, prompt) {
     how = android && android.sendToAiApp ? android.sendToAiApp(ai, prompt) : 'missing';
   if (how === 'shared') return notify(`Opening ${guide.name}. Check the message, then send it.`);
   if (how === 'opened') return copyText(prompt, `Prompt copied. Paste it into a new ${guide.name} chat.`);
-  let url = guide.newChat + encodeURIComponent(prompt),
-    fits = url.length <= MAX_PROMPT_URL;
-  copyText(prompt, fits ? `Opening ${guide.name}. The prompt is copied too, in case you need to paste it.` : `Prompt copied. Paste it into the new ${guide.name} chat.`);
+  let url = guide.newChat ? guide.newChat + encodeURIComponent(prompt) : '',
+    fits = !!url && url.length <= MAX_PROMPT_URL;
+  copyText(prompt, fits ? `Opening ${guide.name}. The prompt is copied too, in case you need to paste it.` : `Prompt copied — paste it into ${guide.name}.`);
   openUrl(fits ? url : guide.url);
 }
 

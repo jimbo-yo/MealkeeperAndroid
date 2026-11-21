@@ -2458,6 +2458,18 @@ test('Gemini uses gemini-4-neon by default, strips models/ prefix, streams repli
   ]);
   window.onAiDone(req[1], 200, null);
   eq([meals[0].name, chat.pending[0].role, chat.pending[0].tool_call_id], ['Gemini Tacos', 'tool', 'call_g1'], 'meal saved and tool result queued');
+
+  // Without an API key or Gemini Android app, sendPrompt copies the prompt and opens gemini.google.com cleanly (no ?q=).
+  bridge.aiAppResult = 'missing';
+  let opened = [];
+  let prevOpenUrl = openUrl;
+  openUrl = u => opened.push(u);
+  try {
+    sendPrompt('gemini', 'Help with my tacos');
+  } finally {
+    openUrl = prevOpenUrl;
+  }
+  eq([bridgeCalls('copyText').pop()[1], opened[0]], ['Help with my tacos', 'https://gemini.google.com/app']);
 });
 
 // ---- Report ----

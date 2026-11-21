@@ -16,8 +16,13 @@
     return true;
   }
 
+  let pendingCopy = Promise.resolve();
+
   window.MealkeeperDesktop = true;
   window.MealkeeperAndroid = {
+    copyText(text) {
+      pendingCopy = invoke('copy_text', {text: String(text || '')}).catch(() => {});
+    },
     // ---- Encrypted AI keys & streaming HTTPS (desktop/src/ai_api.rs) ----
     aiKeys() {
       return JSON.stringify(keys);
@@ -79,7 +84,10 @@
       invoke('set_appearance', {mode: String(mode || 'light')}).catch(() => {});
     },
     openExternalUrl(url) {
-      invoke('open_external_url', {url: String(url || '')}).catch(() => {});
+      // Wait for any in-flight clipboard copy so the prompt is ready to paste as soon as the browser opens.
+      pendingCopy.finally(() => {
+        invoke('open_external_url', {url: String(url || '')}).catch(() => {});
+      });
     }
   };
 
