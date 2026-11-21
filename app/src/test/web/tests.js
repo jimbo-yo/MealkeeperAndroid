@@ -2229,7 +2229,32 @@ test('spoken amounts and steps use natural grammar, temperatures and ranges', ()
     ingredients: [{name: 'Olive oil', quantity: 2, unit: 'tbsp'}],
     instructions: ['Bake at 350 °F (180°C) for 6–7 minutes after adding 2 tbsp olive oil.']
   };
-  eq(spokenStep({id: 99}, r, 0), 'Step 1. Bake at 350 degrees (180 degrees Celsius) for 6 to 7 minutes after adding 2 tbsp olive oil.');
+  eq(spokenStep({id: 99}, r, 0), 'Step 1. Bake at 350 degrees (180 degrees Celsius) for 6 to 7 minutes after adding 2 tablespoons olive oil.');
+});
+
+test('scaling servings also scales portion counts and inline quantities in step text without touching temps, times, or pan sizes', () => {
+  let r = {
+    id: 'buns',
+    servings: 6,
+    ingredients: [
+      {name: 'Butter', quantity: 2, unit: 'tbsp'},
+      {name: 'Bell peppers', quantity: 2, unit: ''}
+    ],
+    instructions: [
+      'Divide dough into 6 equal pieces and shape 6 burger patties, about ½ inch thick.',
+      'In a 4-quart Dutch oven, melt 2 tbsp butter, add 2 bell peppers, and bake at 375°F for 15–18 minutes on a 9x13-inch sheet.',
+      'Cut each potato into 4 wedges and serve 2 patties per person.'
+    ]
+  };
+  let f = 8 / 6;
+  eq(scaleStepText(r.instructions[0], r, f), 'Divide dough into 8 equal pieces and shape 8 burger patties, about ½ inch thick.');
+  eq(scaleStepText(r.instructions[1], r, f), 'In a 4-quart Dutch oven, melt 2 ⅔ tbsp butter, add 2 ⅔ bell peppers, and bake at 375°F for 15–18 minutes on a 9x13-inch sheet.');
+  eq(scaleStepText(r.instructions[2], r, f), 'Cut each potato into 4 wedges and serve 2 patties per person.', 'per-item and per-person counts stay fixed');
+  eq(scaleStepText('Shape 6 patties.', r, 1 / 6), 'Shape 1 patty.', 'singularizes when scaled to 1');
+  assert(markedStep(r, 0, f).includes('shape 8 burger patties'), 'Cook mode step scales yield');
+  chosenServings['99/buns'] = 8;
+  assert(spokenStep({id: 99}, r, 0).includes('shape 8 burger patties'), 'spoken step reads scaled yield');
+  assert(spokenStep({id: 99}, r, 1).includes('melt 2 and two thirds tablespoons butter'), 'spoken step expands scaled inline unit');
 });
 
 test('"ingredients" reads this step\'s ingredients aloud, "next" exits when done, and voice keeps screen awake', () => {

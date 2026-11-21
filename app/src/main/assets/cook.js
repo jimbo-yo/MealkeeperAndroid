@@ -65,25 +65,28 @@ function matchUnitNumber(unit, value) {
   return value > 1 ? pair[1] : pair[0];
 }
 
+function kitchenNumber(v) {
+  if (v <= 0) return '0';
+  if (v >= 10) return String(Math.round(v));
+  let whole = Math.floor(v),
+    frac = v - whole;
+  // Never round a small positive amount down to 0 ("0 tsp").
+  if (frac < 0.04 && whole > 0) return String(whole);
+  if (frac > 0.96) return String(whole + 1);
+  let near = KITCHEN_FRACTIONS.reduce((a, f) => Math.abs(f[0] - frac) < Math.abs(a[0] - frac) ? f : a);
+  if (Math.abs(near[0] - frac) > 0.04) return String(Math.max(0.01, Math.round(v * 100) / 100));
+  return (whole ? whole + ' ' : '') + near[1];
+}
+
 // A quantity scaled for the chosen servings, written the way a cook measures it: 1.5 -> "1 ½", 0.33 -> "⅓".
 // Text quantities ("a pinch") and unscaled amounts are left exactly as the recipe gives them.
 function scaledQty(q, unit, factor) {
   if (typeof q !== 'number' || factor === 1) return fmtQty(q, unit);
   let v = q * factor;
   if (v <= 0) return fmtQty(0, unit);
-  let u = matchUnitNumber(unit, v);
-  if (v >= 10) return fmtQty(Math.round(v), u);
-  let whole = Math.floor(v),
-    frac = v - whole;
-  // Never round a small positive amount down to 0 ("0 tsp").
-  if (frac < 0.04 && whole > 0) return fmtQty(whole, u);
-  if (frac > 0.96) return fmtQty(whole + 1, matchUnitNumber(unit, whole + 1));
-  let near = KITCHEN_FRACTIONS.reduce((a, f) => Math.abs(f[0] - frac) < Math.abs(a[0] - frac) ? f : a);
-  if (Math.abs(near[0] - frac) > 0.04) {
-    let rounded = Math.max(0.01, Math.round(v * 100) / 100);
-    return fmtQty(rounded, matchUnitNumber(unit, rounded));
-  }
-  return [(whole ? whole + ' ' : '') + near[1], u].filter(Boolean).join(' ');
+  let numStr = kitchenNumber(v),
+    shownVal = parseStepNum(numStr);
+  return [numStr, matchUnitNumber(unit, shownVal != null ? shownVal : v)].filter(Boolean).join(' ');
 }
 
 function servingsBarHtml(s, decCall, incCall) {
@@ -160,6 +163,155 @@ function hasLeadingQty(prefix) {
   return HAS_LEADING_QTY_RE.test(prefix);
 }
 
+// ---- Scaling numbers inside step text ----
+
+// Discrete portion/yield nouns in step prose ("shape 6 patties", "divide into 8 equal buns") that scale with servings.
+const PORTION_PAIRS = [
+  ['patty', 'patties'], ['burger', 'burgers'], ['bun', 'buns'], ['roll', 'rolls'], ['ball', 'balls'],
+  ['piece', 'pieces'], ['portion', 'portions'], ['serving', 'servings'], ['biscuit', 'biscuits'],
+  ['muffin', 'muffins'], ['scone', 'scones'], ['bagel', 'bagels'], ['loaf', 'loaves'], ['cookie', 'cookies'],
+  ['brownie', 'brownies'], ['bar', 'bars'], ['pancake', 'pancakes'], ['waffle', 'waffles'], ['crepe', 'crepes'],
+  ['tortilla', 'tortillas'], ['taco', 'tacos'], ['enchilada', 'enchiladas'], ['burrito', 'burritos'],
+  ['quesadilla', 'quesadillas'], ['slider', 'sliders'], ['sandwich', 'sandwiches'], ['wrap', 'wraps'],
+  ['skewer', 'skewers'], ['kebab', 'kebabs'], ['meatball', 'meatballs'], ['dumpling', 'dumplings'],
+  ['empanada', 'empanadas'], ['croquette', 'croquettes'], ['fritter', 'fritters'], ['cake', 'cakes'],
+  ['cupcake', 'cupcakes'], ['tart', 'tarts'], ['pie', 'pies'], ['pizza', 'pizzas'], ['flatbread', 'flatbreads'],
+  ['fillet', 'fillets'], ['filet', 'filets'], ['steak', 'steaks'], ['chop', 'chops'], ['cutlet', 'cutlets'],
+  ['breast', 'breasts'], ['thigh', 'thighs'], ['drumstick', 'drumsticks'], ['wing', 'wings'], ['rib', 'ribs'],
+  ['sausage', 'sausages'], ['link', 'links'], ['bowl', 'bowls'], ['plate', 'plates'], ['ramekin', 'ramekins'],
+  ['jar', 'jars'], ['glass', 'glasses'], ['mug', 'mugs'], ['wedge', 'wedges'], ['disk', 'disks'],
+  ['disc', 'discs'], ['log', 'logs'], ['mound', 'mounds'], ['scoop', 'scoops'], ['round', 'rounds'],
+  ['square', 'squares'], ['rectangle', 'rectangles'], ['triangle', 'triangles'], ['strip', 'strips'], ['egg', 'eggs']
+];
+const PORTION_FORMS = Object.fromEntries(PORTION_PAIRS.flatMap(([sg, pl]) => [[sg, [sg, pl]], [pl, [sg, pl]]]));
+const NON_MODIFIER_WORDS = new Set(('inch inches in cm mm foot feet ft min mins minute minutes hr hrs hour hours ' +
+  'sec secs second seconds degree degrees percent batch batches step steps stage stages layer layers side sides ' +
+  'rack racks to or of on at for with and the a an each every per from into onto over under by as').split(' '));
+const COOKWARE_RE = /^\s+(?:pot|pots|pan|pans|skillet|skillets|saucepan|saucepans|dutch\s+oven|baking\s+dish|casserole|pitcher|container|measure|measuring)\b/i;
+const FRAC_VALUES = {'⅛': 1 / 8, '¼': 1 / 4, '⅓': 1 / 3, '⅜': 3 / 8, '½': 1 / 2, '⅝': 5 / 8, '⅔': 2 / 3, '¾': 3 / 4, '⅞': 7 / 8};
+
+const STEP_NUM_ATOM = '(?:\\d+\\s+\\d+\\s*\\/\\s*\\d+|\\d+\\s+[⅛¼⅓⅜½⅝⅔¾⅞]|\\d+\\s*\\/\\s*\\d+|[⅛¼⅓⅜½⅝⅔¾⅞]|\\d+(?:\\.\\d+)?)';
+const SCALE_UNIT_RE = '(?:tbsp|tbs|tsp|oz|fl\\.?\\s*oz|lb|lbs|g|kg|ml|l|c\\.|pt|qt|gal|pkg|tablespoons?|teaspoons?|ounces?|pounds?|grams?|kilograms?|milliliters?|liters?|cups?|pints?|quarts?|gallons?|cloves?|cans?|bunches?|sprigs?|stalks?|slices?|heads?|sticks?|pinch(?:es)?|dash(?:es)?|packages?|sheets?|leaves?)\\.?';
+const STEP_SCALABLE_NUM_RE = new RegExp(`(${STEP_NUM_ATOM})(?:\\s*([–—-])\\s*(${STEP_NUM_ATOM}))?`, 'g');
+const UNIT_FOLLOW_RE = new RegExp(`^([ \\t]+)(${SCALE_UNIT_RE})(?![A-Za-z0-9-])`, 'i');
+const WORDS_FOLLOW_RE = /^([ \t]+)([A-Za-z]+)(?:([ \t]+)([A-Za-z]+))?(?:([ \t]+)([A-Za-z]+))?/;
+
+function parseStepNum(s) {
+  s = s.trim();
+  let m = /^(\d+)\s+(\d+)\s*\/\s*(\d+)$/.exec(s);
+  if (m) return +m[1] + (+m[2] / +m[3]);
+  m = /^(\d+)\s+([⅛¼⅓⅜½⅝⅔¾⅞])$/.exec(s);
+  if (m) return +m[1] + FRAC_VALUES[m[2]];
+  m = /^(\d+)\s*\/\s*(\d+)$/.exec(s);
+  if (m) return +m[1] / +m[2];
+  if (FRAC_VALUES[s]) return FRAC_VALUES[s];
+  let n = parseFloat(s);
+  return isFinite(n) ? n : null;
+}
+
+function preserveCase(orig, word) {
+  if (!orig || !word) return word;
+  if (orig === orig.toUpperCase() && orig !== orig.toLowerCase()) return word.toUpperCase();
+  if (orig[0] === orig[0].toUpperCase() && orig[0] !== orig[0].toLowerCase()) return word[0].toUpperCase() + word.slice(1);
+  return word;
+}
+
+// Scales inline measured quantities ("2 tbsp olive oil"), yield/portion counts ("shape 6 patties", "divide into 6
+// equal buns"), and countable whole ingredients ("add 2 bell peppers") inside step prose when servings change.
+// Leaves temperatures, durations, pan/dimension sizes, and per-item counts ("cut each into 4 wedges") untouched.
+function scaleStepText(text, r, factor) {
+  if (!text || factor === 1 || !(factor > 0)) return text || '';
+  let allIngs = (r && r.ingredients) || [];
+  let countedTerms = allIngs.filter(x => !str(x.unit).trim())
+    .flatMap(x => ingredientTerms(x, allIngs))
+    .sort((a, b) => b.length - a.length);
+  let countedRe = countedTerms.length
+    ? new RegExp('^([ \\t]+(?:[A-Za-z]+[ \\t]+)?)(' + countedTerms.map(escapeRegex).join('|') + ')\\b', 'i')
+    : null;
+
+  let out = '',
+    pos = 0,
+    re = new RegExp(STEP_SCALABLE_NUM_RE.source, 'g'),
+    m;
+  while ((m = re.exec(text))) {
+    let start = m.index,
+      end = start + m[0].length,
+      prev = start > 0 ? text[start - 1] : '',
+      next = text[end] || '';
+    if (/[A-Za-z0-9.\-x×#°/]/.test(prev) || /[-°%x×"\/]/.test(next)) continue;
+
+    let clauseBefore = text.slice(0, start).split(/[.,;:\n]/).pop();
+    if (/\b(?:each|every|per|step|no\.?)\b/i.test(clauseBefore)) continue;
+
+    let after = text.slice(end);
+    if (/^(?:[ \t]+[A-Za-z]+){0,4}[ \t]+(?:per|each)\b/i.test(after)) continue;
+
+    let v1 = parseStepNum(m[1]),
+      dash = m[2] || '',
+      v2 = m[3] ? parseStepNum(m[3]) : null;
+    if (!(v1 > 0)) continue;
+
+    // 1. Inline measured quantity ("2 tbsp", "1/2 cup", "2–3 tsp")
+    let um = UNIT_FOLLOW_RE.exec(after);
+    if (um && !COOKWARE_RE.test(after.slice(um[0].length))) {
+      let unit = um[2],
+        rep = v2 != null
+          ? `${scaledQty(v1, '', factor)}${dash}${scaledQty(v2, unit, factor)}`
+          : scaledQty(v1, unit, factor);
+      out += text.slice(pos, start) + rep;
+      pos = end + um[0].length;
+      re.lastIndex = pos;
+      continue;
+    }
+
+    // 2. Portion/yield count with 0–2 modifier words ("6 patties", "6 burger buns", "6 equal pieces")
+    let wm = WORDS_FOLLOW_RE.exec(after);
+    if (wm) {
+      let words = [wm[2], wm[4], wm[6]].filter(Boolean),
+        seps = [wm[1], wm[3], wm[5]],
+        matchedIdx = -1;
+      for (let k = 0; k < words.length; k++) {
+        let lw = words[k].toLowerCase();
+        if (PORTION_FORMS[lw]) {
+          matchedIdx = k;
+          continue;
+        }
+        if (matchedIdx >= 0 || NON_MODIFIER_WORDS.has(lw)) break;
+      }
+      if (matchedIdx >= 0) {
+        let s1 = Math.max(1, Math.round(v1 * factor)),
+          s2 = v2 != null ? Math.max(1, Math.round(v2 * factor)) : null,
+          pair = PORTION_FORMS[words[matchedIdx].toLowerCase()],
+          target = s2 != null ? s2 : s1,
+          noun = preserveCase(words[matchedIdx], target > 1 ? pair[1] : pair[0]),
+          prefix = '';
+        for (let k = 0; k < matchedIdx; k++) prefix += seps[k] + words[k];
+        prefix += seps[matchedIdx];
+        let consumedLen = prefix.length + words[matchedIdx].length;
+        out += text.slice(pos, start) + (s2 != null ? `${s1}${dash}${s2}` : String(s1)) + prefix + noun;
+        pos = end + consumedLen;
+        re.lastIndex = pos;
+        continue;
+      }
+    }
+
+    // 3. Countable whole recipe ingredient ("2 bell peppers", "1 ripe avocado")
+    let cm = countedRe && countedRe.exec(after);
+    if (cm) {
+      let mod = cm[1].trim().toLowerCase();
+      if (!mod || !NON_MODIFIER_WORDS.has(mod)) {
+        let rep = v2 != null
+          ? `${scaledQty(v1, '', factor)}${dash}${scaledQty(v2, '', factor)}`
+          : scaledQty(v1, '', factor);
+        out += text.slice(pos, start) + rep + cm[0];
+        pos = end + cm[0].length;
+        re.lastIndex = pos;
+      }
+    }
+  }
+  return out + text.slice(pos);
+}
+
 // The first mention of each ingredient in a step, in reading order and without overlaps: [{start, end, ing}].
 // Tie-breaks same-start matches by longest match ("red wine vinegar" beats "red wine") and only rejects against kept hits.
 function mentions(text, ingredients) {
@@ -183,10 +335,10 @@ function stepIngredients(r, i) {
   return [...new Set(mentions(r.instructions[i] || '', r.ingredients).map(h => h.ing))];
 }
 
-// A step as HTML, with each ingredient it mentions highlighted and its (scaled) amount written in front of it
-// (unless the step already writes an amount right before the ingredient).
+// A step as HTML, with inline amounts/yields scaled, each ingredient it mentions highlighted, and its (scaled) amount
+// written in front of it (unless the step already writes an amount right before the ingredient).
 function markedStep(r, i, factor) {
-  let text = r.instructions[i] || '',
+  let text = scaleStepText(r.instructions[i] || '', r, factor),
     out = '',
     pos = 0;
   for (let h of mentions(text, r.ingredients)) {
@@ -543,7 +695,7 @@ function renderCook(resetBodyScroll = false) {
        <p class="cook-step${flashed('repeat')}">${markedStep(r, i, factor)}</p>
        ${stepTimersHtml(r, i)}
        <div class="divider"></div>
-       <p class="cook-next">${i + 1 < n ? `<strong>Next:</strong> ${escapeHtml(r.instructions[i + 1])}` : '<strong>Last step.</strong>'}</p>
+       <p class="cook-next">${i + 1 < n ? `<strong>Next:</strong> ${escapeHtml(scaleStepText(r.instructions[i + 1], r, factor))}` : '<strong>Last step.</strong>'}</p>
        ${r.ingredients.length ? `<button class="text-btn cook-show${flashed('ingredients', 'close')}" onclick="cookSheet(true)">Show ingredients</button>` : ''}`;
   let uses = done ? [] : stepIngredients(r, i);
   let sheet = !cook.sheet ? '' : `<div class="cook-sheet-bg" onclick="if(event.target===this)cookSheet(false)"><div class="cook-sheet" role="dialog" aria-label="Ingredients">
@@ -761,7 +913,7 @@ function articleFor(word) {
 
 // An amount as it should sound: "1 ½ tbsp" -> "1 and a half tablespoons", "½ oz" -> "half an ounce".
 function spokenAmount(q, unit, factor) {
-  let shown = scaledQty(q, '', factor),
+  let shown = typeof q === 'number' ? kitchenNumber(q * factor) : scaledQty(q, '', factor),
     m = /^(\d+(?:\.\d+)?)?\s*([½¼¾⅓⅔⅛⅜⅝⅞])?$/.exec(shown.trim()),
     u = str(unit).trim(),
     norm = u.replace(/\.$/, '').replace(/\s+/g, ' ').toLowerCase(),
@@ -778,8 +930,8 @@ function spokenAmount(q, unit, factor) {
 }
 
 function spokenStep(m, r, i) {
-  let text = r.instructions[i] || '',
-    factor = servingsFactor(m, r),
+  let factor = servingsFactor(m, r),
+    text = scaleStepText(r.instructions[i] || '', r, factor),
     out = '',
     pos = 0;
   for (let h of mentions(text, r.ingredients)) {
@@ -791,6 +943,10 @@ function spokenStep(m, r, i) {
     .replace(/(\d+)\s*°\s*F\b/gi, '$1 degrees')
     .replace(/(\d+)\s*°\s*C\b/gi, '$1 degrees Celsius')
     .replace(/(\d+)\s*°(?!\s*[FC])/g, '$1 degrees')
+    .replace(new RegExp(`(${STEP_NUM_ATOM})[ \\t]+(${SCALE_UNIT_RE})(?![A-Za-z0-9-])`, 'gi'), (full, n, u) => {
+      let v = parseStepNum(n);
+      return v > 0 ? spokenAmount(v, u, 1) : full;
+    })
     .replace(/(\d+)\s*[–—-]\s*(\d+)/g, '$1 to $2');
 }
 
