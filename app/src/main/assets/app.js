@@ -460,9 +460,9 @@ const AI_GUIDES = {
     newChat: 'https://gemini.google.com/app?q=',
     steps: [
       'Tap <strong>Copy instructions</strong> below.',
-      'In Gemini, open <strong>Gems</strong> in the sidebar and choose <strong>New Gem</strong> (for example “Meal planning”).',
-      'Paste into the Gem’s <strong>Instructions</strong> and save.',
-      'Plan your meals in chats with that Gem.'
+      'Open <strong>gemini.google.com</strong> in a computer browser (the Gemini mobile app doesn’t let you create new Gems), open <strong>Explore Gems</strong> (or <strong>Gems</strong>) in the left sidebar, and click <strong>+ New Gem</strong> (for example “Meal planning”).',
+      'Paste into the Gem’s <strong>Instructions</strong> and click <strong>Save</strong>.',
+      'Plan your meals in chats with that Gem—once saved, it also syncs to the Gemini mobile app.'
     ]
   },
   chatgpt: {
