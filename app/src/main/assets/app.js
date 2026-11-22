@@ -160,6 +160,8 @@ function cleanMeal(m, i) {
     time: str(m.time) || '—',
     servings: num(m.servings) || 3,
     serveAt: /^\d{1,2}:\d{2}$/.test(m.serveAt) ? m.serveAt : '18:30',
+    updatedAt: num(m.updatedAt) || 0,
+    syncFile: str(m.syncFile) || '',
     recipes: arr(m.recipes).map(cleanRecipe),
     shopping: arr(m.shopping).map(cleanShoppingItem).filter(x => x.name),
     timeline: arr(m.timeline).map(cleanStep).filter(t => t.task).sort((a, b) => a.offset - b.offset)
@@ -524,11 +526,13 @@ function saveState() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
     storageWarned = false;
+    scheduleSyncPush();
     return;
   } catch (e) {}
   let message;
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({...state, chat: null}));
+    scheduleSyncPush();
     message = 'Storage is full, so this chat won\'t be kept when the app closes. Your meals are saved. Close the chat to free space.';
   } catch (e) {
     message = 'Couldn\'t save your changes: storage is full. Export a backup in Settings, then delete meals you don\'t need.';
@@ -536,6 +540,175 @@ function saveState() {
   if (!storageWarned) notify(message, 8000);
   storageWarned = true;
 }
+
+// ---- Desktop Sync Folder (per-meal .prompttopan.json files in Google Drive / OneDrive / Dropbox / Syncthing) ----
+
+let pendingSyncDeletes = [],
+  suppressSyncPush = false;
+
+function hasSyncFolderBridge() {
+  return !!(window.MealkeeperAndroid && window.MealkeeperAndroid.pickSyncFolder && window.MealkeeperAndroid.syncFolderPath);
+}
+
+function syncFolderPath() {
+  return hasSyncFolderBridge() ? str(window.MealkeeperAndroid.syncFolderPath()) : '';
+}
+
+function safeMealFilename(name, taken) {
+  let base = str(name).trim().replace(/[^A-Za-z0-9 ._()&'-]/g, '_').replace(/\s+/g, ' ').slice(0, 80).replace(/^[ .]+|[ .]+$/g, '') || 'meal';
+  let candidate = `${base}.prompttopan.json`,
+    n = 2;
+  while (taken.has(candidate.toLowerCase())) candidate = `${base} (${n++}).prompttopan.json`;
+  taken.add(candidate.toLowerCase());
+  return candidate;
+}
+
+function mealSyncFilename(m, taken) {
+  if (m.syncFile && !taken.has(m.syncFile.toLowerCase())) {
+    taken.add(m.syncFile.toLowerCase());
+    return m.syncFile;
+  }
+  m.syncFile = safeMealFilename(m.name, taken);
+  return m.syncFile;
+}
+
+function buildSyncPayload() {
+  let taken = new Set(['keepers.prompttopan.json']);
+  let mealFiles = meals.map(m => {
+    let filename = mealSyncFilename(m, taken),
+      v1 = toV1Meal(m);
+    v1.serve_at = m.serveAt;
+    v1.updated_at = m.updatedAt || Date.now();
+    v1.checked_items = m.shopping.filter(x => x.checked).map(x => x.name);
+    return {
+      filename,
+      json: JSON.stringify({format: 'mealkeeper-v1', updated_at: v1.updated_at, meals: [v1]}, null, 1)
+    };
+  });
+  let keepersJson = keepers.length
+    ? JSON.stringify({format: 'mealkeeper-keepers-v1', updated_at: Date.now(), keepers}, null, 1)
+    : null;
+  let removeFiles = pendingSyncDeletes.slice();
+  pendingSyncDeletes.length = 0;
+  return {meals: mealFiles, keepersJson, removeFiles};
+}
+
+function pushSyncFolderNow() {
+  clearTimeout(window._syncPush);
+  if (suppressSyncPush || !syncFolderPath() || !window.MealkeeperAndroid.syncFolderPush) return;
+  window.MealkeeperAndroid.syncFolderPush(JSON.stringify(buildSyncPayload()));
+}
+
+function scheduleSyncPush() {
+  if (suppressSyncPush || !syncFolderPath()) return;
+  clearTimeout(window._syncPush);
+  window._syncPush = setTimeout(pushSyncFolderNow, 800);
+}
+
+function syncFolderPanel() {
+  if (!hasSyncFolderBridge()) return '';
+  let folder = syncFolderPath();
+  if (!folder) {
+    return `<div class="panel"><div class="row"><div class="recipe-icon">⇄</div><div style="flex:1"><strong>Sync folder</strong><div class="muted small" style="margin-top:4px;line-height:1.5">Save each meal as its own <code>.prompttopan.json</code> file in a folder synced by Google Drive, OneDrive, Dropbox or Syncthing—no account or server needed. Open any meal file on your phone straight from Drive.</div></div></div><div class="actions" style="margin-top:12px"><button class="primary" onclick="window.MealkeeperAndroid.pickSyncFolder()">Choose sync folder…</button></div></div>`;
+  }
+  return `<div class="panel"><div class="row"><div class="recipe-icon">⇄</div><div style="flex:1"><strong>Sync folder</strong><div class="muted small" style="margin-top:4px;word-break:break-all">${escapeHtml(folder)}</div><div class="muted small" style="margin-top:4px">Each meal stays synced as its own <code>.prompttopan.json</code> file.</div></div></div><div class="actions" style="margin-top:12px"><button class="primary" onclick="syncFolderNow()">↻ Sync now</button><button class="secondary" onclick="window.MealkeeperAndroid.openSyncFolder()">Open folder ↗</button><button class="outline" onclick="window.MealkeeperAndroid.pickSyncFolder()">Change</button><button class="outline danger" onclick="window.MealkeeperAndroid.clearSyncFolder()">Disconnect</button></div></div>`;
+}
+
+function syncFolderNow() {
+  if (!syncFolderPath()) return;
+  pushSyncFolderNow();
+  if (window.MealkeeperAndroid.syncFolderPull) window.MealkeeperAndroid.syncFolderPull(true);
+}
+
+window.onSyncFolderChanged = function(path) {
+  if (window.MealkeeperAndroid && window.MealkeeperAndroid._setSyncFolderCache) window.MealkeeperAndroid._setSyncFolderCache(path || '');
+  render();
+  if (path) {
+    notify('Sync folder connected');
+    pushSyncFolderNow();
+  } else {
+    notify('Sync folder disconnected (files left in place)');
+  }
+};
+
+window.receiveSyncFolder = function(data, notifyWhenEmpty) {
+  if (!data || !Array.isArray(data.files)) return;
+  let added = 0,
+    updated = 0,
+    keepersAdded = 0;
+
+  for (let entry of data.files) {
+    let parsed = parseMealkeeperJson(entry.content || '');
+    if (!parsed || !arr(parsed.meals).length) continue;
+    for (let raw of parsed.meals) {
+      let v1 = obj(raw),
+        fresh = fromV1Meal(v1, 0);
+      if (!fresh) continue;
+      let stamp = num(v1.updated_at) || num(parsed.updated_at) || num(entry.mtimeMs) || 0;
+      fresh.updatedAt = stamp;
+      fresh.syncFile = entry.filename || '';
+      if (str(v1.serve_at) && /^\d{1,2}:\d{2}$/.test(str(v1.serve_at))) fresh.serveAt = str(v1.serve_at);
+      let checkedSet = Array.isArray(v1.checked_items)
+        ? new Set(v1.checked_items.map(s => str(s).toLowerCase().trim()))
+        : null;
+      if (checkedSet) fresh.shopping.forEach(x => { if (checkedSet.has(x.name.toLowerCase().trim())) x.checked = true; });
+
+      let target = existingMealFor(v1) || (entry.filename && meals.find(m => m.syncFile === entry.filename));
+      if (target) {
+        // Only apply when the file on disk is newer than our local copy (2s grace avoids self-echo).
+        if (stamp > (target.updatedAt || 0) + 2000) {
+          updateMeal(target, fresh, v1);
+          if (fresh.serveAt) target.serveAt = fresh.serveAt;
+          if (checkedSet) target.shopping.forEach(x => { x.checked = checkedSet.has(x.name.toLowerCase().trim()); });
+          target.updatedAt = stamp;
+          if (entry.filename) target.syncFile = entry.filename;
+          updated++;
+        } else if (!target.syncFile && entry.filename) {
+          target.syncFile = entry.filename;
+        }
+      } else {
+        fresh.id = newId(meals);
+        meals.unshift(fresh);
+        added++;
+      }
+    }
+  }
+
+  if (data.keepers && data.keepers.content) {
+    try {
+      let kd = obj(JSON.parse(data.keepers.content));
+      if (kd.format === 'mealkeeper-keepers-v1' && Array.isArray(kd.keepers)) {
+        let haveIds = new Set(keepers.map(k => k.id));
+        let haveTitles = new Set(keepers.map(k => k.recipe.title.trim().toLowerCase()));
+        kd.keepers.map(cleanKeeper).filter(Boolean).forEach(k => {
+          if (!haveIds.has(k.id) && !haveTitles.has(k.recipe.title.trim().toLowerCase())) {
+            keepers.push(k);
+            haveIds.add(k.id);
+            haveTitles.add(k.recipe.title.trim().toLowerCase());
+            keepersAdded++;
+          }
+        });
+      }
+    } catch (e) {}
+  }
+
+  if (added || updated || keepersAdded) {
+    suppressSyncPush = true;
+    try {
+      render();
+    } finally {
+      suppressSyncPush = false;
+    }
+    let parts = [
+      added && `${added} new meal${added === 1 ? '' : 's'}`,
+      updated && `${updated} updated`,
+      keepersAdded && `${keepersAdded} keeper${keepersAdded === 1 ? '' : 's'}`
+    ].filter(Boolean);
+    notify(`Synced from folder: ${parts.join(', ')}`);
+  } else if (notifyWhenEmpty) {
+    notify('Sync folder is up to date');
+  }
+};
 
 function loadState() {
   let s = null;
@@ -1040,7 +1213,7 @@ ${inAndroidApp() ? step('↗', 'Or share it', 'Long-press the reply, tap <strong
 }
 
 function settingsPage() {
-  return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="row"><div class="recipe-icon">◑</div><div style="flex:1"><strong>Appearance</strong><div class="muted small" style="margin-top:4px">Light is linen; dark is a soft olive.</div></div></div><div class="tabs" style="margin:10px 0 0">${Object.entries(APPEARANCES).map(([k, name]) => `<button class="tab ${k === appearance ? 'active' : ''}" onclick="setAppearance('${k}')">${name}</button>`).join('')}</div></div><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Prompt to Pan is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div>${readStepsSetting()}</div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a meal export from ChatGPT, Claude or another AI.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✦</div><div style="flex:1"><strong>Your AI</strong><div class="muted small" style="margin-top:4px">Used by Chat, Revise with AI and Ask AI. With an API key (AI accounts below) they answer inside the app; without one they open the AI's app.</div></div></div>${aiChoice()}<div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up the Gemini, ChatGPT, Claude or Grok app to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div>${inAndroidApp() ? `<div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in ChatGPT or Claude and come back, Prompt to Pan offers to import it. Android shows a notice each time it checks a new copy.</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div>` : ''}</div>${aiAccountsPanel()}<div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.${hasApi() ? ' AI API keys aren\'t included.' : ''}</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>${sharePanel()}`
+  return `<div class="eyebrow">PREFERENCES</div><h1 class="headline">Settings</h1><p class="subhead">Tune your cooking experience and recipe import behavior.</p><div class="panel"><div class="row"><div class="recipe-icon">◑</div><div style="flex:1"><strong>Appearance</strong><div class="muted small" style="margin-top:4px">Light is linen; dark is a soft olive.</div></div></div><div class="tabs" style="margin:10px 0 0">${Object.entries(APPEARANCES).map(([k, name]) => `<button class="tab ${k === appearance ? 'active' : ''}" onclick="setAppearance('${k}')">${name}</button>`).join('')}</div></div><div class="panel"><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">☀</div><div><strong>Keep screen awake while cooking</strong><div class="muted small" style="margin-top:5px">Stays on while a cooking timeline or recipe is open.</div></div></div><input class="toggle" type="checkbox" ${cookAwake?'checked':''} onchange="setCookAwake(this.checked)"></div><div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">◐</div><div><strong>Always keep screen awake</strong><div class="muted small" style="margin-top:5px">Stays on whenever Prompt to Pan is open. Uses more battery.</div></div></div><input class="toggle" type="checkbox" ${awake?'checked':''} onchange="setAwake(this.checked)"></div>${readStepsSetting()}</div><div class="panel"><div class="row"><div class="recipe-icon">↥</div><div style="flex:1"><strong>Import recipes</strong><div class="muted small" style="margin-top:4px">Paste a meal export from ChatGPT, Claude or another AI.</div></div><button class="secondary" onclick="openImport()">Import</button></div><div class="divider"></div><div class="row"><div class="recipe-icon">✦</div><div style="flex:1"><strong>Your AI</strong><div class="muted small" style="margin-top:4px">Used by Chat, Revise with AI and Ask AI. With an API key (AI accounts below) they answer inside the app; without one they open the AI's app.</div></div></div>${aiChoice()}<div class="row"><div class="recipe-icon">✧</div><div style="flex:1"><strong>Plan with AI</strong><div class="muted small" style="margin-top:4px">Set up the Gemini, ChatGPT, Claude or Grok app to send meals here.</div></div><button class="secondary" onclick="go('ai')">Set up</button></div>${inAndroidApp() || !!(window.MealkeeperAndroid && window.MealkeeperAndroid.setClipboardWatch) ? `<div class="divider"></div><div class="spread" style="flex-wrap:nowrap"><div class="row"><div class="recipe-icon">▣</div><div><strong>Offer to import copied meals</strong><div class="muted small" style="margin-top:5px">When you copy a meal in Gemini, ChatGPT, Claude or Grok and come back, Prompt to Pan offers to import it.${inAndroidApp() ? ' Android shows a notice each time it checks a new copy.' : ''}</div></div></div><input class="toggle" type="checkbox" ${clipOffer?'checked':''} onchange="setClipOffer(this.checked)"></div>` : ''}</div>${aiAccountsPanel()}${syncFolderPanel()}<div class="panel"><div class="row"><div class="recipe-icon">⛁</div><div style="flex:1"><strong>Backup & restore</strong><div class="muted small" style="margin-top:4px">Your meals and shopping checklist are saved on this device. Export a backup file to keep them safe or move them to another phone.${hasApi() ? ' AI API keys aren\'t included.' : ''}</div></div></div><div class="actions" style="margin-top:14px"><button class="primary" onclick="exportBackup()">⤓ Export backup</button><button class="secondary" onclick="restoreBackup()">⤒ Restore from file</button></div></div>${sharePanel()}`
 }
 
 // ---- Sharing the app ----
@@ -1114,6 +1287,8 @@ function addMeal() {
     time: '—',
     servings: 3,
     serveAt: '18:30',
+    updatedAt: Date.now(),
+    syncFile: '',
     recipes: [],
     shopping: [],
     timeline: []
@@ -1170,9 +1345,11 @@ function importMeals(parsed, mode = 'update') {
     if (!fresh) return;
     if (target) {
       updateMeal(target, fresh, obj(v1));
+      target.updatedAt = Date.now();
       updated.push(target);
       bringToFront(target);
     } else {
+      fresh.updatedAt = Date.now();
       added.push(fresh);
     }
   });
@@ -1301,12 +1478,14 @@ function deleteMeal(id) {
   if (i < 0) return;
   let kept = keepPickedRecipes(meals[i]);
   let [gone] = meals.splice(i, 1);
+  if (gone.syncFile) pendingSyncDeletes.push(gone.syncFile);
   // Drop history that would lead back to it (meal pages show the selected meal, which is about to change).
   navStack = navStack.filter(e => e !== 'meal' && !(typeof e === 'object' && e.meal === id));
   if (selectedMeal === id && meals.length) selectedMeal = meals[0].id;
   closeModal();
   page = 'meals';
   render();
+  pushSyncFolderNow();
   notify(kept ? `Deleted “${gone.name}”, kept ${kept} recipe(s)` : `Deleted “${gone.name}”`);
 }
 
@@ -1331,6 +1510,7 @@ function deleteRecipe(i) {
   m.recipes.splice(i, 1);
   m.timeline = m.timeline.filter(t => !steps.includes(t));
   m.shopping = m.shopping.filter(x => !items.includes(x)).map(x => ({...x, usedIn: x.usedIn.filter(title => title !== r.title)}));
+  m.updatedAt = Date.now();
   // Saved "back to recipe" entries for this meal point at recipe positions that just shifted.
   navStack = navStack.filter(e => !(typeof e === 'object' && e.meal === m.id));
   closeModal();
@@ -1342,13 +1522,17 @@ function toggleItem(i, v) {
   let m = currentMeal();
   if (m && m.shopping[i]) {
     m.shopping[i].checked = v;
+    m.updatedAt = Date.now();
     render()
   }
 }
 
 function clearChecks() {
   let m = currentMeal();
-  if (m) m.shopping.forEach(x => x.checked = false);
+  if (m) {
+    m.shopping.forEach(x => x.checked = false);
+    m.updatedAt = Date.now();
+  }
   render()
 }
 
@@ -1392,6 +1576,7 @@ function setServeAt(v) {
   let m = currentMeal();
   if (m && /^\d{1,2}:\d{2}$/.test(v)) {
     m.serveAt = v;
+    m.updatedAt = Date.now();
     render()
   }
 }

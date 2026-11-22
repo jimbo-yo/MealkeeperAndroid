@@ -2474,6 +2474,83 @@ test('Gemini uses gemini-4-neon by default, strips models/ prefix, streams repli
   eq([bridgeCalls('copyText').pop()[1], opened[0]], ['Help with my tacos', 'https://gemini.google.com/app']);
 });
 
+test('Desktop sync folder exports per-meal files and merges newer incoming meals and keepers without clobbering newer local edits', () => {
+  let savedPick = bridge.pickSyncFolder,
+    savedPath = bridge.syncFolderPath,
+    savedPush = bridge.syncFolderPush,
+    savedPull = bridge.syncFolderPull;
+  let folder = '';
+  try {
+    bridge.pickSyncFolder = () => bridge.calls.push(['pickSyncFolder']);
+    bridge.syncFolderPath = () => folder;
+    bridge.syncFolderPush = json => bridge.calls.push(['syncFolderPush', JSON.parse(json)]);
+    bridge.syncFolderPull = notifyEmpty => bridge.calls.push(['syncFolderPull', notifyEmpty]);
+
+    go('settings');
+    assert(main().textContent.includes('Choose sync folder'), 'Sync folder panel shown when bridge supports it');
+    folder = 'G:\\My Drive\\Prompt to Pan';
+    window.onSyncFolderChanged(folder);
+    assert(main().textContent.includes('G:\\My Drive\\Prompt to Pan'), 'connected folder path displayed');
+
+    let pushed = bridgeCalls('syncFolderPush').pop()[1];
+    assert(pushed.meals.length === 4 && pushed.meals[0].filename.endsWith('.prompttopan.json'), 'exports one .prompttopan.json per meal');
+
+    // Incoming new meal file imports cleanly with checked items and serve time.
+    let newMealJson = JSON.stringify({
+      format: 'mealkeeper-v1',
+      updated_at: 2000000000000,
+      meals: [{
+        name: 'Thanksgiving 2026',
+        serve_at: '16:30',
+        checked_items: ['Turkey'],
+        recipes: [{id: 'turkey', title: 'Roast turkey', ingredients: [{name: 'Turkey', quantity: 14, unit: 'lb'}], instructions: ['Roast until 165°F.']}]
+      }]
+    });
+    window.receiveSyncFolder({
+      folder,
+      files: [{filename: 'Thanksgiving 2026.prompttopan.json', mtimeMs: 2000000000000, content: newMealJson}],
+      keepers: null
+    }, false);
+    let tg = meals.find(m => m.name === 'Thanksgiving 2026');
+    assert(tg && tg.serveAt === '16:30' && tg.shopping[0].checked === true, 'new meal imported with serveAt and checkmarks');
+
+    // Older file on disk does NOT overwrite a newer local edit.
+    tg.updatedAt = 2000000010000;
+    tg.serveAt = '17:00';
+    window.receiveSyncFolder({
+      folder,
+      files: [{filename: 'Thanksgiving 2026.prompttopan.json', mtimeMs: 2000000000000, content: newMealJson}],
+      keepers: null
+    }, false);
+    eq(tg.serveAt, '17:00', 'stale file ignored');
+
+    // Newer file on disk updates the meal.
+    let newerJson = JSON.stringify({
+      format: 'mealkeeper-v1',
+      updated_at: 2000000020000,
+      meals: [{
+        mealkeeper_id: String(tg.id),
+        name: 'Thanksgiving 2026',
+        serve_at: '17:30',
+        recipes: [{id: 'turkey', title: 'Herb roast turkey', ingredients: [{name: 'Turkey', quantity: 14, unit: 'lb'}], instructions: ['Roast with herbs.']}]
+      }]
+    });
+    window.receiveSyncFolder({
+      folder,
+      files: [{filename: 'Thanksgiving 2026.prompttopan.json', mtimeMs: 2000000020000, content: newerJson}],
+      keepers: null
+    }, false);
+    eq([tg.serveAt, tg.recipes[0].title], ['17:30', 'Herb roast turkey'], 'newer file updated local meal');
+  } finally {
+    clearTimeout(window._syncPush);
+    pendingSyncDeletes.length = 0;
+    bridge.pickSyncFolder = savedPick;
+    bridge.syncFolderPath = savedPath;
+    bridge.syncFolderPush = savedPush;
+    bridge.syncFolderPull = savedPull;
+  }
+});
+
 // ---- Report ----
 
 reset();

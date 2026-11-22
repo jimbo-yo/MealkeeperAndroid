@@ -126,6 +126,7 @@ function saveMealFromAi(input) {
     meals.unshift(fresh);
   }
   let meal = target || fresh;
+  meal.updatedAt = Date.now();
   selectedMeal = meal.id;
   chat.items.push({role: 'meal', id: meal.id, name: meal.name, updated: !!target});
   saveState();

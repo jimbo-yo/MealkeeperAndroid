@@ -1,22 +1,30 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod ai_api;
+mod sync_folder;
 
 use ai_api::AiApi;
 use base64::Engine;
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::{State, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use sync_folder::{SyncFolder, SyncPushPayload};
+use tauri::{Manager, State, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 const MAX_IMPORT_BYTES: u64 = 20_000_000;
+const MAX_CLIP_CHARS: usize = 500_000;
 const BRIDGE_JS: &str = include_str!("bridge.js");
 
 struct AppState {
     ai: AiApi,
+    sync: SyncFolder,
     awake: Mutex<Option<keepawake::KeepAwake>>,
     startup_file: Mutex<Option<PathBuf>>,
+    clip_watch: AtomicBool,
+    last_clip: Mutex<String>,
+    ready: AtomicBool,
 }
 
 #[tauri::command]
@@ -128,7 +136,15 @@ fn set_appearance(window: WebviewWindow, mode: String) {
 }
 
 #[tauri::command]
-fn copy_text(text: String) -> Result<(), String> {
+fn set_clipboard_watch(state: State<'_, AppState>, enabled: bool) {
+    state.clip_watch.store(enabled, Ordering::Relaxed);
+}
+
+#[tauri::command]
+fn copy_text(state: State<'_, AppState>, text: String) -> Result<(), String> {
+    if let Ok(mut last) = state.last_clip.lock() {
+        *last = text.clone();
+    }
     let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     clipboard.set_text(text).map_err(|e| e.to_string())
 }
@@ -142,8 +158,131 @@ fn open_external_url(url: String) -> Result<(), String> {
     }
 }
 
+// ---- Local Sync Folder (works with Google Drive for Desktop, OneDrive, Dropbox, Syncthing) ----
+
+#[tauri::command]
+fn pick_sync_folder(window: WebviewWindow) {
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = rfd::FileDialog::new().set_title("Choose Prompt to Pan sync folder");
+        if let Some(cur) = app.state::<AppState>().sync.current_path() {
+            let p = PathBuf::from(cur);
+            if p.is_dir() {
+                dialog = dialog.set_directory(p);
+            }
+        }
+        let Some(picked) = dialog.pick_folder() else {
+            return;
+        };
+        let state = app.state::<AppState>();
+        match state.sync.set_path(Some(picked)) {
+            Ok(Some(path_str)) => {
+                let p_js = json!(path_str);
+                let _ = window.eval(&format!(
+                    "window.onSyncFolderChanged&&window.onSyncFolderChanged({p_js})"
+                ));
+                trigger_sync_pull(&window, &state, true);
+            }
+            Ok(None) => {}
+            Err(err) => {
+                let msg = json!(format!("Could not use that folder: {err}"));
+                let _ = window.eval(&format!("window.notify&&window.notify({msg})"));
+            }
+        }
+    });
+}
+
+#[tauri::command]
+fn clear_sync_folder(window: WebviewWindow, state: State<'_, AppState>) {
+    let _ = state.sync.set_path(None);
+    let _ = window.eval("window.onSyncFolderChanged&&window.onSyncFolderChanged('')");
+}
+
+#[tauri::command]
+fn open_sync_folder(state: State<'_, AppState>) -> Result<(), String> {
+    let Some(path) = state.sync.current_path() else {
+        return Err("No sync folder configured".into());
+    };
+    open::that(path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn sync_folder_push(window: WebviewWindow, payload_json: String) {
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let Ok(payload) = serde_json::from_str::<SyncPushPayload>(&payload_json) else {
+            return;
+        };
+        let state = app.state::<AppState>();
+        if let Err(err) = state.sync.push(&payload) {
+            let msg = json!(format!("Sync folder write paused: {err}"));
+            let _ = window.eval(&format!("window.notify&&window.notify({msg})"));
+        }
+    });
+}
+
+#[tauri::command]
+fn sync_folder_pull(window: WebviewWindow, notify_empty: bool) {
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        trigger_sync_pull(&window, &state, notify_empty);
+    });
+}
+
+fn trigger_sync_pull(window: &WebviewWindow, state: &AppState, notify_empty: bool) {
+    match state.sync.pull() {
+        Ok(Some(result)) => {
+            if let Ok(payload) = serde_json::to_string(&result) {
+                let _ = window.eval(&format!(
+                    "window.receiveSyncFolder&&window.receiveSyncFolder({payload},{notify_empty})"
+                ));
+            }
+        }
+        Ok(None) => {}
+        Err(err) => {
+            if notify_empty {
+                let msg = json!(format!("Couldn't read sync folder: {err}"));
+                let _ = window.eval(&format!("window.notify&&window.notify({msg})"));
+            }
+        }
+    }
+}
+
+fn check_clipboard_on_focus(window: &WebviewWindow, state: &AppState) {
+    if !state.ready.load(Ordering::Relaxed) || !state.clip_watch.load(Ordering::Relaxed) {
+        return;
+    }
+    let Ok(mut clipboard) = arboard::Clipboard::new() else {
+        return;
+    };
+    let Ok(text) = clipboard.get_text() else {
+        return;
+    };
+    if text.is_empty() || text.len() > MAX_CLIP_CHARS {
+        return;
+    }
+    {
+        let Ok(mut last) = state.last_clip.lock() else {
+            return;
+        };
+        if *last == text {
+            return;
+        }
+        *last = text.clone();
+    }
+    if !(text.contains("\"meals\"") || text.contains("\"recipes\"")) {
+        return;
+    }
+    let quoted = json!(text);
+    let _ = window.eval(&format!(
+        "window.receiveClipboardText&&window.receiveClipboardText({quoted})"
+    ));
+}
+
 #[tauri::command]
 fn frontend_ready(window: WebviewWindow, state: State<'_, AppState>) {
+    state.ready.store(true, Ordering::Relaxed);
     let path = state.startup_file.lock().ok().and_then(|mut g| g.take());
     if let Some(p) = path {
         if let Some(text) = read_limited_text(&p) {
@@ -153,6 +292,13 @@ fn frontend_ready(window: WebviewWindow, state: State<'_, AppState>) {
             ));
         }
     }
+    // Pull any updates from the configured sync folder on startup.
+    let app = window.app_handle().clone();
+    let win = window.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        trigger_sync_pull(&win, &state, false);
+    });
 }
 
 fn read_limited_text(path: &PathBuf) -> Option<String> {
@@ -166,7 +312,10 @@ fn read_limited_text(path: &PathBuf) -> Option<String> {
 fn is_internal_url(url: &tauri::Url) -> bool {
     match url.scheme() {
         "tauri" | "about" | "data" | "blob" => true,
-        "http" | "https" => matches!(url.host_str(), Some("tauri.localhost" | "localhost" | "127.0.0.1")),
+        "http" | "https" => matches!(
+            url.host_str(),
+            Some("tauri.localhost" | "localhost" | "127.0.0.1")
+        ),
         _ => false,
     }
 }
@@ -179,16 +328,8 @@ fn main() {
 
     let ai = AiApi::new();
     let initial_keys = ai.key_status_json();
-    let init_script = format!("window.__INITIAL_AI_KEYS__={initial_keys};\n{BRIDGE_JS}");
-
-    let state = AppState {
-        ai,
-        awake: Mutex::new(None),
-        startup_file: Mutex::new(startup_file),
-    };
 
     tauri::Builder::default()
-        .manage(state)
         .invoke_handler(tauri::generate_handler![
             set_ai_key,
             clear_ai_key,
@@ -199,11 +340,44 @@ fn main() {
             open_backup_file,
             set_keep_screen_on,
             set_appearance,
+            set_clipboard_watch,
             copy_text,
             open_external_url,
+            pick_sync_folder,
+            clear_sync_folder,
+            open_sync_folder,
+            sync_folder_push,
+            sync_folder_pull,
             frontend_ready,
         ])
         .setup(move |app| {
+            let config_dir = app
+                .path()
+                .app_config_dir()
+                .unwrap_or_else(|_| std::env::temp_dir().join("prompt-to-pan"));
+            let sync = SyncFolder::new(config_dir);
+            let initial_sync = sync.current_path().unwrap_or_default();
+            let init_script = format!(
+                "window.__INITIAL_AI_KEYS__={initial_keys};\nwindow.__INITIAL_SYNC_FOLDER__={};\n{BRIDGE_JS}",
+                json!(initial_sync)
+            );
+
+            // Seed last_clip with whatever is already on the clipboard at startup so we don't offer stale clips.
+            let initial_clip = arboard::Clipboard::new()
+                .ok()
+                .and_then(|mut c| c.get_text().ok())
+                .unwrap_or_default();
+
+            app.manage(AppState {
+                ai,
+                sync,
+                awake: Mutex::new(None),
+                startup_file: Mutex::new(startup_file),
+                clip_watch: AtomicBool::new(true),
+                last_clip: Mutex::new(initial_clip),
+                ready: AtomicBool::new(false),
+            });
+
             let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Prompt to Pan")
                 .inner_size(1120.0, 780.0)
@@ -221,6 +395,22 @@ fn main() {
                     }
                 })
                 .build()?;
+
+            let focus_win = win.clone();
+            win.on_window_event(move |event| {
+                if let WindowEvent::Focused(true) = event {
+                    let w = focus_win.clone();
+                    let handle = focus_win.app_handle().clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        let state = handle.state::<AppState>();
+                        check_clipboard_on_focus(&w, &state);
+                        if state.ready.load(Ordering::Relaxed) {
+                            trigger_sync_pull(&w, &state, false);
+                        }
+                    });
+                }
+            });
+
             let _ = win.show();
             let _ = win.set_focus();
             Ok(())

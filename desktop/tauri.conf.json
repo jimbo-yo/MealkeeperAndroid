@@ -16,18 +16,17 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Prompt to Pan",
+    "shortDescription": "Plan meals with AI, then cook from recipes, shopping lists and timelines.",
+    "category": "Utility",
     "icon": [
       "icons/icon.ico",
       "icons/icon.png"
     ],
-    "fileAssociations": [
-      {
-        "ext": ["json"],
-        "name": "Prompt to Pan Meal",
-        "description": "Prompt to Pan exported meal file",
-        "mimeType": "application/json",
-        "role": "Viewer"
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
       }
-    ]
+    }
   }
 }

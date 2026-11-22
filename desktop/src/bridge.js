@@ -1,9 +1,11 @@
 // Injected by Tauri before any script in app/src/main/assets/index.html runs.
 // Implements the same bridge surface as Android's MainActivity (MealkeeperAndroid) so the shared web UI gets
-// OS-keychain AI chat, native Save/Open dialogs, keep-screen-awake, and desktop theme sync with zero duplication.
+// OS-keychain AI chat, native Save/Open dialogs, local Sync Folder, clipboard auto-import, keep-screen-awake,
+// and desktop theme sync with zero duplication.
 (function() {
   const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args || {});
   const keys = Object.assign({gemini: false, claude: false, chatgpt: false, grok: false}, window.__INITIAL_AI_KEYS__ || {});
+  let syncFolder = typeof window.__INITIAL_SYNC_FOLDER__ === 'string' ? window.__INITIAL_SYNC_FOLDER__ : '';
 
   function validApiKey(key) {
     if (typeof key !== 'string') return false;
@@ -23,6 +25,10 @@
     copyText(text) {
       pendingCopy = invoke('copy_text', {text: String(text || '')}).catch(() => {});
     },
+    setClipboardWatch(enabled) {
+      invoke('set_clipboard_watch', {enabled: !!enabled}).catch(() => {});
+    },
+
     // ---- Encrypted AI keys & streaming HTTPS (desktop/src/ai_api.rs) ----
     aiKeys() {
       return JSON.stringify(keys);
@@ -74,6 +80,30 @@
     },
     openBackupFile() {
       invoke('open_backup_file').catch(() => {});
+    },
+
+    // ---- Local Sync Folder (Google Drive / OneDrive / Dropbox / Syncthing) ----
+    syncFolderPath() {
+      return syncFolder;
+    },
+    _setSyncFolderCache(p) {
+      syncFolder = p || '';
+    },
+    pickSyncFolder() {
+      invoke('pick_sync_folder').catch(() => {});
+    },
+    clearSyncFolder() {
+      syncFolder = '';
+      invoke('clear_sync_folder').catch(() => {});
+    },
+    openSyncFolder() {
+      invoke('open_sync_folder').catch(() => {});
+    },
+    syncFolderPush(payloadJson) {
+      invoke('sync_folder_push', {payloadJson: String(payloadJson || '{}')}).catch(() => {});
+    },
+    syncFolderPull(notifyEmpty) {
+      invoke('sync_folder_pull', {notifyEmpty: !!notifyEmpty}).catch(() => {});
     },
 
     // ---- Keep screen awake, native window theme, external links ----
